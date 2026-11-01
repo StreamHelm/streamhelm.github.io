@@ -1,4 +1,4 @@
-// Predictions with two currencies (DESIGN §6): channel points are settled by Twitch, Dollahs by us (parimutuel).
+// Predictions with two currencies (DESIGN §6): channel points are settled by Twitch, Pepe's Silvia Dollahs by us (parimutuel).
 // The bars show both: each option's length is its share of points + Dollahs × dollahToPoints, split inside into the
 // outcome colour (points) and silver (Dollahs). A prediction only truly dies if neither currency was put in.
 
@@ -87,6 +87,65 @@ export function settleDollahPool(pred, winningOutcome, bets, cfg) {
     return intent(predIdem(pred.id, 'payout', b.twitchId), 'pred_payout', [[escrowAcct(pred.id), -pay], [userAcct(b.twitchId), pay]],
       `Prediction won (+${fmt(shares[i])})`, { predictionId: pred.id });
   });
+}
+
+/**
+ * Who won / lost how many Pepe's Silvia Dollahs (net, after their own stake) once a prediction resolves - the same split
+ * as settleDollahPool (winners share the losing pool by stake; the biggest winning bet takes the rounding remainder).
+ * A no-winner pool (refund or house) leaves everyone at 0 (refunded) / -stake (house).
+ * @returns {{ twitchId:string, outcome:string, bet:number, dollahs:number }[]}  every bettor, biggest gain first
+ */
+export function dollahResults(pred, winningOutcome, bets, cfg) {
+  const live = bets.filter((b) => b.amount > 0);
+  const won = new Set(Array.isArray(winningOutcome) ? winningOutcome : [winningOutcome]);
+  const winners = live.filter((b) => won.has(b.outcome));
+  const losePool = live.filter((b) => !won.has(b.outcome)).reduce((s, b) => s + b.amount, 0);
+  const net = new Map();
+  if (!winners.length) {
+    const house = pconf(cfg).noWinnerPolicy === 'house' && losePool > 0;
+    for (const b of live) net.set(b.twitchId, { twitchId: b.twitchId, outcome: b.outcome, bet: b.amount, dollahs: house ? -b.amount : 0 });
+  } else {
+    const winPool = winners.reduce((s, b) => s + b.amount, 0), shares = winners.map((b) => mulDiv(b.amount, losePool, winPool));
+    let big = 0; winners.forEach((b, i) => { if (b.amount > winners[big].amount) big = i; });
+    shares[big] += losePool - shares.reduce((s, x) => s + x, 0);
+    for (const b of live) if (!won.has(b.outcome)) net.set(b.twitchId, { twitchId: b.twitchId, outcome: b.outcome, bet: b.amount, dollahs: -b.amount });
+    winners.forEach((b, i) => net.set(b.twitchId, { twitchId: b.twitchId, outcome: b.outcome, bet: b.amount, dollahs: shares[i] }));
+  }
+  return [...net.values()].sort((a, b) => b.dollahs - a.dollahs);
+}
+
+/**
+ * Channel points won / lost per viewer from Twitch's channel.prediction.end (each outcome's top_predictors - Twitch only
+ * lists the TOP 10 per outcome, so this is partial on a busy prediction). Net = won − used for the winning outcome, −used
+ * for the others; a canceled prediction refunds everyone (nobody listed).
+ * @param {{ status?:string, winner?:{ id }|null, outcomes:{ id, top?:{ id, login?, name?, used, won }[] }[] }} ev
+ */
+export function pointsResults(ev) {
+  if (!ev || ev.status === 'canceled' || !Array.isArray(ev.outcomes)) return [];
+  const win = ev.winner && ev.winner.id, out = [];
+  for (const o of ev.outcomes) for (const t of o.top || []) {
+    if (!t || !t.id) continue;
+    const used = Math.max(0, Number(t.used) || 0), got = Math.max(0, Number(t.won) || 0);
+    out.push({ twitchId: String(t.id), name: t.name || t.login || null, points: o.id === win ? got - used : -used });
+  }
+  return out;
+}
+
+/**
+ * One results list from both currencies. "Biggest" = the combined value the bars already use: points + Pepe's Silvia
+ * Dollahs × economy.dollahToPoints (1 Dollah weighs 2 points by default). The champ is the biggest positive
+ * value, the biggest loser the most negative (none when nobody lost).
+ * @param {{ dollahs?:{ twitchId, dollahs }[], points?:{ twitchId, points, name? }[], names?:Object<string,string> }} r
+ */
+export function predictionResults({ dollahs = [], points = [], names = {} } = {}, cfg) {
+  const k = ((cfg && cfg.dollahToPoints) ?? DEFAULT_ECONOMY.dollahToPoints) || 2, by = new Map();
+  const get = (id) => { if (!by.has(id)) by.set(id, { twitchId: id, name: names[id] || null, points: 0, dollahs: 0, value: 0 }); return by.get(id); };
+  for (const d of dollahs) get(String(d.twitchId)).dollahs += d.dollahs | 0;
+  for (const p of points) { const x = get(String(p.twitchId)); x.points += p.points | 0; if (!x.name && p.name) x.name = p.name; }
+  const all = [...by.values()].map((x) => ({ ...x, value: x.points + x.dollahs * k }));
+  const winners = all.filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
+  const losers = all.filter((x) => x.value < 0).sort((a, b) => a.value - b.value);
+  return { winners, losers, champ: winners[0] || null, loser: losers[0] || null };
 }
 
 /**

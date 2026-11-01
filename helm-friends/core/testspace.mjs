@@ -18,7 +18,7 @@ export function fakeName(n) {
 
 /**
  * The chat line for an act-as quick button (the admin page's buttons build these; the cloud runs them as that fake).
- * @param {'join'|'heist'|'bet'|'accept'|'decline'|'challenge'|'slots'|'cursed'|'roulette'|'flip'|'race'|'raw'} kind
+ * @param {'join'|'heist'|'bet'|'accept'|'decline'|'challenge'|'slots'|'cursed'|'plinko'|'potato'|'pass'|'roulette'|'flip'|'race'|'raw'} kind
  * @param {{ role?:string, amount?:number, n?:number, target?:string, game?:'fight'|'armwrestle'|'race', text?:string, pick?:string, call?:string }} a
  */
 export function actCommand(kind, a = {}) {
@@ -29,9 +29,15 @@ export function actCommand(kind, a = {}) {
     case 'bet': return `!pred ${a.n || 1} ${amt}`;
     case 'accept': return '!accept';
     case 'decline': return '!decline';
-    case 'challenge': return `!${a.game === 'armwrestle' ? 'armwrestle' : a.game === 'race' ? 'race' : 'fight'} @${String(a.target || '').replace(/^@/, '')} ${amt}`;
+    case 'challenge': return `!${a.game === 'armwrestle' ? 'armwrestle' : a.game === 'race' ? 'race' : a.game === 'danceoff' ? 'danceoff' : 'fight'} @${String(a.target || '').replace(/^@/, '')} ${amt}`;
+    case 'wheel': return `!wheel ${amt}${a.runs > 1 ? ' ' + Math.min(3, a.runs) : ''}`;   // v1.21
+    case 'vote': return a.n === 2 ? '2' : '1';                                             // v1.21: a Dance-Off vote is just "1" / "2"
+    case 'emote': return a.text ? `!emote ${String(a.text).split(' ')[0]}` : '!dance';
     case 'slots': return `!slots ${amt}`;
     case 'cursed': return `!cursed ${amt}`;
+    case 'plinko': return `!plinko ${amt}${a.risk ? ' ' + a.risk : ''}`;   // v1.18
+    case 'potato': return a.amount ? `!potato ${amt}` : '!potato';
+    case 'pass': return a.target ? `!pass @${String(a.target).replace(/^@/, '')}` : '!pass';
     case 'roulette': return `!roulette ${amt} ${a.pick || 'red'}`;
     case 'flip': return `!flip ${amt} ${a.call || 'heads'}`;
     case 'raw': return String(a.text || '').slice(0, 300);
@@ -53,9 +59,21 @@ export const DEFAULT_CROWD = Object.freeze({ on: false, perMin: 6 });
  */
 export function crowdActions(world, rng, { perMin, dtMs }) {
   const out = [], fakes = world.fakes || [];
-  if (!fakes.length || !(perMin > 0)) return out;
+  if (!fakes.length) return out;
+  // v1.18 Hot Potato: a fake holding the bomb usually tosses it on purpose (half the time at someone)
+  if (world.potato && world.potato.holder && fakes.some((f) => f.twitchId === world.potato.holder) && rng.chance(0.6)) {
+    const others = (world.potato.alive || []).filter((x) => x !== world.potato.holder);
+    out.push({ twitchId: world.potato.holder, text: rng.chance(0.5) && others.length ? actCommand('pass', { target: (fakes.find((f) => f.twitchId === rng.pick(others)) || {}).login }) : '!pass' });
+  }
+  // v1.21 Dance-Off: while chat votes, a few fakes vote each pump (a leaning crowd: 60 % for one side, chosen per game)
+  if (world.dance && world.dance.open) {
+    const voters = fakes.filter((f) => f.twitchId !== world.dance.a && f.twitchId !== world.dance.b), lean = world.dance.lean === 2 ? 2 : 1;
+    const k = Math.min(voters.length, 1 + Math.floor(rng.next() * 3));
+    for (let i = 0; i < k; i++) { const f = rng.pick(voters); out.push({ twitchId: f.twitchId, text: actCommand('vote', { n: rng.chance(0.6) ? lean : 3 - lean }) }); }
+  }
   // accepting a challenge never waits
   for (const p of world.pending || []) if (fakes.some((f) => f.twitchId === p.b)) out.push({ twitchId: p.b, text: rng.chance(0.85) ? '!accept' : '!decline' });
+  if (!(perMin > 0)) return out;   // v1.21: the forced moves above (bomb tosses, Dance-Off votes) still happen with the crowd at 0
   const expected = (perMin * dtMs) / 60000;
   let n = Math.floor(expected) + (rng.next() < expected - Math.floor(expected) ? 1 : 0);
   const ROLES = ['mastermind', 'hacker', 'safecracker', 'driver', 'lookout', 'muscle'];
@@ -63,12 +81,13 @@ export function crowdActions(world, rng, { perMin, dtMs }) {
     const f = rng.pick(fakes), lob = (world.lobbies || []).find((l) => !(l.people || []).includes(f.login));
     if (lob) { out.push({ twitchId: f.twitchId, text: lob.game === 'heist' ? actCommand('heist', { amount: Math.max(lob.bet ? lob.bet.min : 50, 100), role: rng.pick(ROLES) }) : '!join' }); continue; }
     if (world.prediction && rng.chance(0.5)) { out.push({ twitchId: f.twitchId, text: actCommand('bet', { n: rng.pick(world.prediction.outcomes).n, amount: rng.int(1, 5) * 20 }) }); continue; }
-    if (world.stageFree && rng.chance(0.4)) { out.push({ twitchId: f.twitchId, text: rng.pick([actCommand('slots', { amount: 50 }), actCommand('flip', { amount: 50, call: rng.pick(['heads', 'tails']) }), actCommand('roulette', { amount: 50, pick: rng.pick(['red', 'black', 'odd', '17']) }), actCommand('cursed', { amount: 20 })]) }); continue; }
+    if (world.stageFree && rng.chance(0.4)) { out.push({ twitchId: f.twitchId, text: rng.pick([actCommand('slots', { amount: 50 }), actCommand('flip', { amount: 50, call: rng.pick(['heads', 'tails']) }), actCommand('roulette', { amount: 50, pick: rng.pick(['red', 'black', 'odd', '17']) }), actCommand('cursed', { amount: 20 }), actCommand('plinko', { amount: 50, risk: rng.pick(['low', 'mid', 'high']) }), actCommand('wheel', { amount: 50 })]) }); continue; }
+    if (rng.chance(0.15)) { out.push({ twitchId: f.twitchId, text: rng.pick(['!dance robot', '!dance disco', '!emote love', '!emote laugh', '!emote flex', '!emote glorp', '!wave']) }); continue; }   // v1.21 emotes
     out.push({ twitchId: f.twitchId, text: rng.pick(['lets goooo', 'GLORP', 'this stream is cooking', 'klerb moment', 'who wants to heist', 'my guy is so drippy']) });
   }
   return out;
 }
 
 /** What Sky can trigger from the Test space (each runs through the real game / event path). */
-export const TEST_TRIGGERS = Object.freeze(['slots', 'roulette', 'flip', 'cursed', 'fight', 'armwrestle', 'race', 'grandprix', 'royale', 'heist', 'heistSolo',
+export const TEST_TRIGGERS = Object.freeze(['slots', 'roulette', 'flip', 'cursed', 'plinko', 'plinkoHigh', 'potato', 'wheel', 'wheelMulti', 'danceoff', 'emotes', 'fight', 'armwrestle', 'race', 'grandprix', 'royale', 'heist', 'heistSolo',
   'blessing', 'raid', 'bounty', 'prediction', 'predictionTie', 'joinPanel', 'commandList']);

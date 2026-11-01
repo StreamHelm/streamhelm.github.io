@@ -24,9 +24,9 @@ export function emptyStage() {
 }
 
 /** v1.11: the big events. While one is open or running, nothing else may start. */
-export const BIG_EVENTS = Object.freeze(['heist', 'royale', 'grandprix', 'blessing']);
+export const BIG_EVENTS = Object.freeze(['heist', 'royale', 'grandprix', 'blessing', 'potato']);   // v1.18: + Sayok's Hot Potato
 /** How chat lines and the join panel name each big event. */
-export const EVENT_NAMES = Object.freeze({ heist: 'A bank heist', royale: 'A battle royale', grandprix: 'The Gleep Grand Prix', blessing: "Glorp's Blessing" });
+export const EVENT_NAMES = Object.freeze({ heist: 'A bank heist', royale: 'A battle royale', grandprix: 'The Gleep Grand Prix', blessing: "Glorp's Blessing", potato: "Sayok's Hot Potato" });
 /** The stage kind of a game record: a Grand Prix lobby/show is 'grandprix'; a race duel stays 'race'. */
 export const stageKindOf = (game, input) => (game === 'race' && input && input.mode === 'gp' ? 'grandprix' : game);
 

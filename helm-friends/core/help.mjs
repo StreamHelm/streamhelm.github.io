@@ -7,9 +7,15 @@ import { slotsTheory } from './games/slots.mjs';
 import { ROLE_INFO, CORE_ROLES } from './games/heist.mjs';
 import { flipTheory } from './games/flip.mjs';
 import { raceTheory } from './games/race.mjs';
+import { wheelTheory, WHEEL_SEGS, CHAOS } from './games/wheel.mjs';
+import { DANCE } from './games/danceoff.mjs';
+import { EMOTE_NAMES } from './emotes.mjs';
+import { DANCE_STYLES } from './script.mjs';
 import { fmt } from './format.mjs';
 import { cursedTheory } from './games/cursed.mjs';
 import { checkinTheory } from './streak.mjs';
+import { plinkoTheory } from './games/plinko.mjs';
+import { potatoTheory } from './games/potato.mjs';
 import { TITLES } from './titles.mjs';
 import { CORE_ROLES as ROLES5 } from './games/heist.mjs';
 
@@ -38,7 +44,10 @@ export function buildHelp(cfg = DEFAULT_ECONOMY) {
   const a = cfg.accrual, slots = slotsTheory(), flip = flipTheory(), cursed = cursedTheory(), ci = checkinTheory(cfg);
   const cu = cfg.cursed || DEFAULT_ECONOMY.cursed, bl = cfg.blessing || DEFAULT_ECONOMY.blessing, rd = cfg.raid || DEFAULT_ECONOMY.raid, bt = cfg.bounty || DEFAULT_ECONOMY.bounty;
   const followOn = !cfg.follow || cfg.follow.required !== false;
+  const pk = cfg.plinko || DEFAULT_ECONOMY.plinko, po = cfg.potato || DEFAULT_ECONOMY.potato;
+  const plL = plinkoTheory('low'), plM = plinkoTheory('mid'), plH = plinkoTheory('high'), pt6 = potatoTheory(6, 100, cfg);
   const race = cfg.race || DEFAULT_ECONOMY.race, gp = race.gp, gp10 = raceTheory(10, 0, cfg);
+  const wh = cfg.wheel || DEFAULT_ECONOMY.wheel, wt = wheelTheory(), dc = cfg.danceoff || DEFAULT_ECONOMY.danceoff, voteSec = (DANCE.voteTo - DANCE.voteFrom) / 1000;
   const runs = (g) => (cfg[g] && cfg[g].maxRuns) || 1;
   const cd = Math.round(cfg.cooldown.stageGlobalSec / 60);
   const e = (id, title, commands, syntax, example, line, text, table) => {
@@ -137,19 +146,46 @@ export function buildHelp(cfg = DEFAULT_ECONOMY) {
       '!redeem <reward> spends Pepe\'s Silvia Dollahs on a channel unlock. Browse them all in the web app under Channel unlocks.',
       ['Some channel rewards cost Pepe\'s Silvia Dollahs instead of channel points. Redeem them in the web app (Channel unlocks) or with !redeem and the start of the reward name.',
         'Some only work while Sky is live. Channel-point rewards are listed too, with a link to redeem them on Twitch.']),
+    // ───── v1.18: Pepe's Plinko, Sayok's Hot Potato
+    e('plinko', "Pepe's Plinko", ['plinko'], '!plinko <amount> [low|mid|high] [drops]', '!plinko 100 high',
+      `!plinko 100 drops a silver Pepe's Silvia Dollah through the pegs (${fmt(pk.minBet)}–${fmt(pk.maxBet)}, up to ${pk.maxRuns} drops: !plinko 100 3). Boards: low (safe, returns about ${pct(plL.rtp)}), mid, high (edge slots pay ${plH.top}×).`,
+      [`Bet ${fmt(pk.minBet)}–${fmt(pk.maxBet)} Pepe's Silvia Dollahs with !plinko <amount>. The coin bounces through 12 rows of pegs and lands in a slot that multiplies your bet. Up to ${pk.maxRuns} drops in one go: !plinko 100 3.`,
+        `Pick a board: low (the worst slot still gives half back, returns about ${pct(plL.rtp)}), mid (the default, about ${pct(plM.rtp)}) or high (most drops lose, but the edge slots pay ${plH.top}×; about ${pct(plH.rtp)}). Example: !plinko 50 high 2.`,
+        'The middle slots are the most likely; the edges are rare (1 in 2,048 for either edge).'],
+      { cols: ['Slot (edge → middle)', 'Low', 'Mid', 'High', 'Chance'], rows: plM.slots.slice(0, 7).map((x, i) => [i === 0 ? 'Edge' : i === 6 ? 'Middle' : String(i), plL.slots[i].mult + '×', x.mult + '×', plH.slots[i].mult + '×', pct(i === 6 ? x.p : x.p * 2, 2)]) }),
+    e('potato', "Sayok's Hot Potato", ['potato', 'pass'], '!potato [entry]  ·  !join  ·  !pass @user', '!potato 50',
+      `!potato 50 opens Sayok's Hot Potato (3–${fmt(po.maxPlayers)} players, !join to play). Sayok's bomb flies around; !pass @user to toss it. Whoever holds it when it blows loses their entry; survivors split the pot + a bank bonus.`,
+      [`!potato [entry] opens a game for ${po.lobbySec} seconds (entry 0–${fmt(po.maxEntry)} Pepe's Silvia Dollahs; !potato alone is free). Everyone joins with !join and pays the same entry.`,
+        "Sayok's cursed bomb is passed around faster and faster. When it lands on you, type !pass @name to throw it to someone (or just !pass for a random player) - you have to hold it for a moment first, and you can't pass more than once every few seconds.",
+        `It explodes at a secret random moment: whoever holds it is blasted out and loses their entry. Up to ${po.blasts} bombs go off (never more than players − 1). The survivors share every entry plus a bank bonus (${fmt(po.bonusMin)} + ${po.bonusPct}% of the pot, up to ${fmt(po.bonusCap)}).`,
+        `Example: 6 players × 100 → 3 are blasted, 3 survivors get ${fmt(pt6.share)} each. On average everyone comes out ahead by the bonus split: +${fmt(Math.round(pt6.ev))} per player.`]),
     e('avatar', 'Your Helm Friend', ['show', 'hide'], '!show  ·  !hide', '!hide',
       "Make your Helm Friend in the web app. It walks around on stream when you chat. !hide hides it, !show brings it back.",
       ['Open the web app and choose "Make your character": species, body, height, face, hair and clothes. Use the arrows to cycle pieces and the colour wheel for colours.',
         'Locked items show their price; you can try them on before unlocking. Press "Update / save changes" to send your character to the stream.',
         'Your Helm Friend appears when you chat and leaves after 15 minutes of quiet. !hide keeps it off stream, !show brings it back.']),
-    e('emotes', 'Emotes', ['jump', 'dance', 'wave', 'sit', 'cheer'], '!jump !dance !wave !sit !cheer', '!dance',
-      'Make your Helm Friend move: !jump !dance !wave !sit !cheer.',
-      ['Type !jump, !dance, !wave, !sit or !cheer and your Helm Friend does it on stream (once every 10 seconds).']),
+    e('emotes', 'Emotes', ['jump', 'dance', 'wave', 'sit', 'cheer', 'emote'], '!jump !dance [style] !wave !sit !cheer  ·  !emote <name>', '!dance robot',
+      'Make your Helm Friend move: !jump !dance !wave !sit !cheer. !dance robot (or disco, floss, worm, moonwalk…) picks a dance; !emote love / laugh / cry / rage / sleep / flex / party / glorp / klerb / sayok.',
+      ['Type !jump, !dance, !wave, !sit or !cheer and your Helm Friend does it on stream (one emote every 10 seconds).',
+        `Pick a dance: !dance ${DANCE_STYLES.join(', ')}.`,
+        `!emote <name> plays an emote with a little effect (hearts, tears, steam, zZz, sparkles…): ${EMOTE_NAMES.join(', ')}.`]),
+    // ───── v1.21 (games round 6): Klerb's Chaos Wheel, the Dance-Off
+    e('wheel', "Klerb's Chaos Wheel", ['wheel'], '!wheel <amount> [spins]', '!wheel 100',
+      `!wheel 100 spins Klerb's Chaos Wheel (${fmt(wh.minBet)}–${fmt(wh.maxBet)}, up to ${wh.maxRuns} spins). 16 equal slices from 0 to ${wt.top}×, and every slice sets off some chaos on stream (shrink ray, outfit swap, low gravity, disco…). Returns about ${pct(wt.rtp)}.`,
+      [`Bet ${fmt(wh.minBet)}–${fmt(wh.maxBet)} Pepe's Silvia Dollahs with !wheel <amount>. Klerb's wheel has 16 slices of the same size, so every slice is 1 in 16. Up to ${wh.maxRuns} spins in one go: !wheel 100 3.`,
+        `The slices pay 0, 0.2×, 0.5×, 1×, 1.2×, 1.5×, 2× or the ${wt.top}× jackpot (you get more than your bet back ${pct(wt.win)} of the time). On average it returns about ${pct(wt.rtp)} of what you bet.`,
+        "Win or lose, Klerb causes chaos: everyone shrinks, everybody's outfits get swapped round the stage for a minute, gravity switches off, a disco breaks out, confetti everywhere... It's all just for fun (no Pepe's Silvia Dollahs move because of it)."],
+      { cols: ['Slice', 'Pays', 'Chaos', 'Chance'], rows: WHEEL_SEGS.map((s, i) => [String(i + 1), s.mult + '×', CHAOS[s.effect].name.toLowerCase(), '1 in 16']) }),
+    e('danceoff', 'The Dance-Off', ['danceoff', 'vote'], '!danceoff @user [amount]  ·  type 1 or 2 to vote', '!danceoff @bob 100',
+      `!danceoff @user 100 challenges someone to a Dance-Off (they !accept). Both dance; chat has ${voteSec} seconds to vote by typing 1 or 2. Most votes takes the pot!`,
+      [`!danceoff @user <amount> (${fmt(dc.minBet)}–${fmt(dc.maxBet)} Pepe's Silvia Dollahs, or no amount just for glory) challenges someone; they have ${dc.acceptSec} seconds to !accept or !decline. You can also type !dance @user 100.`,
+        `On stage they take turns on the light-up floor, then dance together. For ${voteSec} seconds everyone in chat votes: type 1 for the one who challenged, 2 for the one who was challenged. One vote each (typing again changes your vote); the dancers can't vote.`,
+        'The most votes wins the whole pot. A tie? PepeBot breaks it with a coin flip.']),
     e('link', 'The web app', ['link', 'help'], '!helm  ·  !hfhelp [topic]', '!hfhelp slots',
-      '!helmfriends (or !hf) posts the web app link. !hfhelp <topic> explains one thing: earning, checkin, fight, slots, cursed, roulette, flip, race, heist, royale, events, titles, predictions, rewards, avatar.',
+      '!helmfriends (or !hf) posts the web app link. !hfhelp <topic> explains one thing: earning, checkin, fight, slots, cursed, plinko, wheel, roulette, flip, race, danceoff, heist, royale, potato, events, titles, predictions, rewards, avatar, emotes.',
       ['!helmfriends (or !hf, !helm) posts the link to the web app. !hfhelp <topic> gives a one-line explanation in chat.']),
     e('events', "Glorp's Blessing, raids and big events", [], '', '',
-      `Big events (heist, battle royale, Grand Prix, Glorp's Blessing) take over the stage: no other games until they're done. Glorp's Blessing rains ${fmt(bl.perViewerMin)}–${fmt(bl.perViewerMax)} Pepe's Silvia Dollahs on everyone watching. Raiders get ${fmt(rd.stipend)} as a welcome.`,
+      `Big events (heist, battle royale, Grand Prix, Hot Potato, Glorp's Blessing) take over the stage: no other games until they're done. Glorp's Blessing rains ${fmt(bl.perViewerMin)}–${fmt(bl.perViewerMax)} Pepe's Silvia Dollahs on everyone watching. Raiders get ${fmt(rd.stipend)} as a welcome.`,
       [`Glorp's Blessing: once in a while Glorp floats down over the stage and rains ${fmt(bl.perViewerMin)}–${fmt(bl.perViewerMax)} Pepe's Silvia Dollahs on everyone who is watching right then. No command - just be there.`,
         `Raids: when a raid arrives every Helm Friend dances, and everyone who came with the raid gets a one-time welcome of ${fmt(rd.stipend)} Pepe's Silvia Dollahs when they first chat or show up.`,
         'While a big event is open or running (a heist, a battle royale, the Gleep Grand Prix or Glorp\'s Blessing) nobody can start another game; join the event instead. Prediction bets still work.']),
@@ -163,7 +199,7 @@ export function buildHelp(cfg = DEFAULT_ECONOMY) {
         '!take @user <amount> (Sky only) removes Pepe\'s Silvia Dollahs. Every give and take is written to the history log.']),
     e('cooldown', 'Why do I have to wait?', [], '', '',
       `Games share one stage: one show at a time, and ${cd} minute${cd === 1 ? '' : 's'} between game starts, so the stream stays tidy.`,
-      [`Slots, roulette, coin flips, fights, arm wrestling, Gleep Races, heists and battle royales share one stage. A multi-spin (!slots 100 3) is one show. Only one runs at a time, and the next can start ${cd} minute${cd === 1 ? '' : 's'} after the last one began.`,
+      [`Slots, Plinko, Klerb's Chaos Wheel, roulette, coin flips, fights, Dance-Offs, arm wrestling, Gleep Races, heists, Hot Potato and battle royales share one stage. A multi-spin (!slots 100 3) is one show. Only one runs at a time, and the next can start ${cd} minute${cd === 1 ? '' : 's'} after the last one began.`,
         'Checking your balance, emotes and prediction bets never wait.']),
   ];
 }
@@ -193,13 +229,15 @@ export function helpLine(topic, { url } = {}) {
   const h = helpFor(topic);
   const more = url ? ` More: ${url}` : '';
   if (h) return (h.line + more).slice(0, 300);
-  return ('Helm Friends: !balance, !slots, !cursed, !roulette, !flip, !fight, !race, !armwrestle, !heist, !pred, emotes, !helmfriends. !hfhelp <topic> for one of them.' + more).slice(0, 300);
+  return ('Helm Friends: !balance, !slots, !plinko, !wheel, !cursed, !roulette, !flip, !fight, !danceoff, !race, !armwrestle, !heist, !potato, !pred, !emote, !helmfriends. !hfhelp <topic> for one of them.' + more).slice(0, 300);
 }
 
 /** One short line per command for the scrolling command list (v1.11). */
 const WHAT = Object.freeze({
   balance: 'your Pepe\'s Silvia Dollahs', fight: 'challenge someone to a fight', armwrestle: 'arm wrestle someone', accept: 'take a challenge',
   decline: 'turn a challenge down', slots: 'spin the slots', cursed: "Sayok's cursed slot - high risk, high reward",
+  plinko: "drop a coin down Pepe's Plinko", potato: "start Sayok's Hot Potato", pass: 'toss the bomb in Hot Potato',
+  wheel: "spin Klerb's Chaos Wheel", danceoff: 'challenge someone to a Dance-Off', vote: 'vote in a Dance-Off (or just type 1 or 2)', emote: 'emotes with effects',
   roulette: 'bet on the wheel', flip: 'flip the Pepe\'s Silvia Dollah coin', race: 'race someone in your UFO', join: 'join the open event',
   heist: 'rob the Silvia Bank with a crew', bet: 'bet Pepe\'s Silvia Dollahs on the prediction', redeem: 'spend Pepe\'s Silvia Dollahs on a channel unlock',
   show: 'show your Helm Friend', hide: 'hide your Helm Friend', link: 'make your Helm Friend (web app)', help: 'how anything works',

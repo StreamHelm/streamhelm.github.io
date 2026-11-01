@@ -9,7 +9,7 @@
 
 import {
   normalizeSpec, defaultSpec, itemById, itemsBySlot, isUnlocked, fitsSpecies, itemsInSpec, describeSpec, skinTone,
-  EYE_PRESETS, fmt, psd, PSD, VEHICLE_PARTS, VEHICLE_OPTIONAL, VEHICLE_COLORS,
+  EYE_PRESETS, fmt, psd, PSD, VEHICLE_PARTS, VEHICLE_OPTIONAL, VEHICLE_COLORS, isCostume, FAITHS,
 } from '../core/index.mjs';
 import { h, icon, mount } from './h.mjs';
 import { renderKeepingFocus, announce } from './a11y.mjs';
@@ -37,10 +37,23 @@ const featureWord = (sp) => FEATURE_WORDS[sp] || 'Ears';
 /** The categories (DESIGN §10): Body · Species · Face · Hair · Hat · Glasses · Ears · Nose · Shirt · Pants · Shoes, + Pet, Car, UFO. */
 export const CATEGORIES = [
   ['body', 'Body'], ['species', 'Species'], ['face', 'Face'], ['hair', 'Hair'], ['hat', 'Hat'], ['eyewear', 'Glasses'],
-  ['ear', 'Ears'], ['nose', 'Nose'], ['shirt', 'Shirt'], ['pants', 'Pants'], ['shoes', 'Shoes'], ['pet', 'Pet'],
+  ['ear', 'Ears'], ['nose', 'Nose'], ['shirt', 'Shirt'], ['pants', 'Pants'], ['shoes', 'Shoes'], ['gloves', 'Gloves'], ['faith', 'God'], ['pet', 'Pet'],
   ['car', 'Getaway car'], ['ufo', 'UFO'],
 ];
 const VEHICLE_CATS = ['car', 'ufo'];
+/**
+ * v1.21: ART's round-6 customization categories. Each tab shows once the catalog sells items in that slot AND the character
+ * spec has a place for it: `spec.extras.<slot>` (core v1.22 EXTRA_SLOTS: neck / back / held / aura), `spec.wear.<slot>`
+ * (when core WEAR_SLOTS lists it) or a top-level `spec.<slot>` Worn (like gloves). The ids are the catalog's slot names
+ * (the shop sold neck / back / held items before these tabs could equip them). Auras / trails are particles on stream.
+ */
+export const EXTRA_CATS = [['neck', 'Necklace'], ['back', 'Back item'], ['held', 'Held item'], ['aura', 'Aura'], ['trail', 'Trail']];
+const sells = (catalog, slot) => !!catalog && (catalog.items || []).some((it) => it.slot === slot && !isCostume(it));
+const own = (o, k) => !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+const extraHome = (draft, slot) => (!draft ? null : own(draft.extras, slot) ? 'extras' : own(draft.wear, slot) ? 'wear' : draft[slot] !== undefined ? 'top' : null);
+const hasExtra = (catalog, draft, slot) => sells(catalog, slot) && !!extraHome(draft, slot);
+/** v1.18: the Gloves tab shows once the spec has `gloves` (art v1.18: a top-level Worn, filled by normalizeSpec) and the catalog sells some. */
+const hasGloves = (catalog, draft) => !!draft && draft.gloves !== undefined && !!catalog && (catalog.items || []).some((it) => it.slot === 'gloves' && !isCostume(it));
 /** v1.14: the top switch of the editor: you, your pet, your getaway car, your UFO. */
 const GROUPS = [['me', 'Me'], ['pet', 'Pet'], ['car', 'Getaway car'], ['ufo', 'UFO']];
 
@@ -121,7 +134,7 @@ export function createEditor({ store, api, actions, art }) {
   function options(slot) {
     const unique = flags().unique;
     return (itemsBySlot(catalog())[slot] || [])
-      .filter((it) => fitsSpecies(it, draft.species) && (!it.reservedFor || it.reservedFor === unique))
+      .filter((it) => fitsSpecies(it, draft.species) && (!it.reservedFor || it.reservedFor === unique) && !isCostume(it))   // v1.18: costumes are the games' job
       .sort((a, b) => slot === 'species' ? SPECIES_NAMES_FIRST.indexOf(a.id.slice(8)) - SPECIES_NAMES_FIRST.indexOf(b.id.slice(8)) : 0);
   }
 
@@ -204,6 +217,31 @@ export function createEditor({ store, api, actions, art }) {
       rows.push(h('p', { class: 'small muted' }, 'This one has its own colours.'));
     }
     if (it && it.tags.includes('number')) rows.push(numberField('jersey-number', 'Jersey number (0–99)', (w.extra && w.extra.number) || '0', (d, v) => { d.wear.shirt.extra = { number: v }; }));
+    return rows;
+  }
+
+  /** v1.21: a top-level Worn slot ({ item, colors }) like spec.gloves: ART's new categories when they live outside spec.wear. */
+  function topRows(slot, label) {
+    const w = draft[slot], it = w ? itemById(catalog(), w.item) : null;
+    const rows = [cycleRow({ key: slot, label, slot, optional: true, noneLabel: `No ${label.toLowerCase()}`,
+      get: (s) => (s[slot] ? s[slot].item : null),
+      set: (s, id) => { const prev = s[slot]; s[slot] = id ? { item: id, colors: prev && prev.colors ? prev.colors : [] } : null; } })];
+    if (it && it.channels > 0 && !it.lockedColors) rows.push(colorRow(`${slot}-colors`, 'Colours', Array.from({ length: it.channels }, (_, i) => colorButton({
+      key: `${slot}-${i}`, label: CHANNEL_NAMES[i], get: (s) => s[slot] && s[slot].colors[i], set: (s, hsv) => { s[slot].colors[i] = hsv; } }))));
+    if (slot === 'aura' || slot === 'trail') rows.push(h('p', { class: 'small muted' }, slot === 'aura' ? 'Your aura sparkles around you on stream.' : 'Your trail follows you when you walk or run on stream.'));
+    return rows;
+  }
+
+  /** v1.22: the cosmetic extras (spec.extras.neck / back / held / aura): ‹ item › with None, colours (core fills defaults). */
+  function extrasRows(slot, label) {
+    const w = draft.extras[slot], it = w ? itemById(catalog(), w.item) : null;
+    const rows = [cycleRow({ key: slot, label, slot, optional: true, noneLabel: `No ${label.toLowerCase()}`,
+      get: (s) => (s.extras && s.extras[slot] ? s.extras[slot].item : null),
+      set: (s, id) => { const prev = s.extras[slot]; s.extras[slot] = id ? { item: id, colors: prev && prev.item === id ? prev.colors : [] } : null; } })];
+    if (it && it.channels > 0 && !it.lockedColors) rows.push(colorRow(`${slot}-colors`, 'Colours', Array.from({ length: it.channels }, (_, i) => colorButton({
+      key: `${slot}-${i}`, label: CHANNEL_NAMES[i], get: (s) => s.extras[slot] && s.extras[slot].colors[i], set: (s, hsv) => { s.extras[slot].colors[i] = hsv; } }))));
+    else if (it && it.lockedColors) rows.push(h('p', { class: 'small muted' }, 'This one has its own colours.'));
+    if (slot === 'aura') rows.push(h('p', { class: 'small muted', 'data-note': 'aura' }, 'Your aura sparkles around you on stream.'));
     return rows;
   }
 
@@ -297,8 +335,30 @@ export function createEditor({ store, api, actions, art }) {
             onchange: (e) => { const v = e.target.value.trim().slice(0, 20); change((s) => { if (v) s.pet.name = v; else delete s.pet.name; }, v ? `Pet name ${v}` : 'Pet name cleared'); } })));
         return rows;
       }
+      case 'gloves': {   // v1.18 (art): your boxing gloves for fights and the royale — spec.gloves, 2 colours (leather, cuff)
+        const git = d.gloves ? itemById(catalog(), d.gloves.item) : null;
+        const rows = [h('p', { class: 'small muted' }, 'Your gloves go on when you fight or brawl in a battle royale. You see them here while you pick.'),
+          cycleRow({ key: 'gloves', label: 'Gloves', slot: 'gloves', get: (s) => (s.gloves ? s.gloves.item : null),
+            set: (s, id) => { const prev = s.gloves; s.gloves = { item: id, colors: prev && prev.colors ? prev.colors : [] }; } })];
+        if (git && git.channels > 0 && !git.lockedColors) rows.push(colorRow('gloves-colors', 'Colours', Array.from({ length: git.channels }, (_, i) => colorButton({
+          key: `gloves-${i}`, label: ['Leather', 'Cuff', 'Third colour'][i], get: (s) => s.gloves && s.gloves.colors[i], set: (s, hsv) => { s.gloves.colors[i] = hsv; } }))));
+        else if (git && git.lockedColors) rows.push(h('p', { class: 'small muted' }, 'These have their own colours.'));
+        return rows;
+      }
+      case 'faith': {   // SH Gods BRIDGE: your god - a badge + a faint aura in the god's colour on stream; your Skyrim cameo worships them
+        const gods = FAITHS;
+        return [h('p', { class: 'small muted' }, 'Pick a god for your Helm Friend: a badge beside your name and a faint aura in your god\'s colour on stream. Free - change it any time.'),
+          segRow({ key: 'faith', label: 'Your god', choices: [['', 'None'], ...gods.map((g) => [g.id, g.name])], get: (s) => s.faith || '',
+            set: (s, v) => { if (v) s.faith = v; else delete s.faith; } }),
+          ...gods.map((g) => h('p', { class: 'small', 'data-faith': g.id }, h('span', { class: 'faith-dot', 'aria-hidden': 'true', style: { display: 'inline-block', width: '.8em', height: '.8em', borderRadius: '2px', marginRight: '.5em', background: g.color, boxShadow: `0 0 0 2px ${g.rim}` } }), h('b', null, g.name), ' - ', g.blurb))];
+      }
       case 'car': case 'ufo': return vehicleRows(id);
-      default: return wearRows(id, (CATEGORIES.find((c) => c[0] === id) || [id, id])[1]);
+      default: {
+        const ex = EXTRA_CATS.find((c) => c[0] === id);
+        if (ex && extraHome(d, id) === 'extras') return extrasRows(id, ex[1]);   // v1.22: spec.extras.<slot>
+        if (ex && extraHome(d, id) === 'top') return topRows(id, ex[1]);   // v1.21: a top-level Worn (spec.<slot>)
+        return wearRows(id, (CATEGORIES.find((c) => c[0] === id) || ex || [id, id])[1]);
+      }
     }
   }
 
@@ -317,7 +377,8 @@ export function createEditor({ store, api, actions, art }) {
   function showPreview() {
     const veh = VEHICLE_CATS.includes(cat);
     preview.el.hidden = veh; vpreview.el.hidden = !veh;
-    if (veh) vpreview.show(draft, cat); else { vpreview.stop(); preview.show(draft); }
+    // Sky: on the Gloves tab your character wears the gloves while you look (preview only; on stream they go on in fights)
+    if (veh) vpreview.show(draft, cat); else { vpreview.stop(); preview.show(draft, { equips: cat === 'gloves' && draft.gloves && draft.gloves.item ? ['gloves'] : [] }); }
   }
 
   function render() {
@@ -332,7 +393,10 @@ export function createEditor({ store, api, actions, art }) {
       onclick: () => { cat = id === 'me' ? lastMe : id; remember(); render(); },
     }, label))));
     catsBox.hidden = group !== 'me';
-    renderKeepingFocus(catsBox, () => mount(catsBox, CATEGORIES.filter(([id]) => !GROUPS.some((g) => g[0] === id)).map(([id, label]) => h('button', {
+    if (cat === 'gloves' && !hasGloves(catalog(), draft)) cat = 'body';
+    if (EXTRA_CATS.some((c) => c[0] === cat) && !hasExtra(catalog(), draft, cat)) cat = 'body';
+    const cats = [...CATEGORIES.filter(([id]) => !GROUPS.some((g) => g[0] === id) && (id !== 'gloves' || hasGloves(catalog(), draft))), ...EXTRA_CATS.filter(([id]) => hasExtra(catalog(), draft, id))];
+    renderKeepingFocus(catsBox, () => mount(catsBox, cats.map(([id, label]) => h('button', {
       type: 'button', class: 'chip', 'aria-pressed': String(id === cat), 'data-fk': 'cat-' + id,
       onclick: () => { cat = id; remember(); render(); },
     }, label))));
@@ -393,7 +457,14 @@ export function createEditor({ store, api, actions, art }) {
         actions.setData({ me: r.me || store.get().me, owned: r.owned || [...(store.get().owned || []), it.id] });
       }
       const rev = baseRev != null ? baseRev : (st.character ? st.character.rev : 0);
-      const r = await api.saveCharacter(draft, rev);
+      let r;
+      try { r = await api.saveCharacter(draft, rev); }
+      catch (e) {
+        // SH Gods BRIDGE: a cloud from before spec.faith refuses the field - save the rest, keep the god for later
+        if (!(e instanceof ApiError && e.code === 'BAD_INPUT' && draft.faith && /faith/.test(`${e.message} ${JSON.stringify(e.body || {})}`))) throw e;
+        const { faith, ...rest } = draft; r = await api.saveCharacter(rest, rev);
+        toast('Saved - picking a god needs the next Helm Friends update, so that part waits.');
+      }
       draft = repair(r.spec); savedJson = JSON.stringify(draft); baseRev = r.rev; touched = false; restored = false;
       remember();
       actions.setData({ character: { spec: r.spec, rev: r.rev } });

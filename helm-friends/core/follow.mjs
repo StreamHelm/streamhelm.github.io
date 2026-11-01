@@ -16,7 +16,7 @@ import { userGate } from './cooldown.mjs';
 const cfgOf = (cfg) => (cfg && cfg.follow) || DEFAULT_ECONOMY.follow;
 
 /** Intents that work without a follow: looking things up, help, the link, hiding, saying no. */
-export const FOLLOW_FREE = Object.freeze(['balance', 'help', 'link', 'hide', 'decline', 'error']);
+export const FOLLOW_FREE = Object.freeze(['balance', 'help', 'link', 'hide', 'decline', 'error', 'vote']);   // v1.21: anyone may vote in a Dance-Off
 
 /**
  * Where someone stands. `flags.follows` is what the cloud learned (true/false, cached); roles and badges outrank it.

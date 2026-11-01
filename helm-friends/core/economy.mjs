@@ -35,7 +35,8 @@ export const DEFAULT_ECONOMY = deepFreeze({
     gp: { lobbySec: 60, minRacers: 3, maxRacers: 24, maxFee: 1000, prizeBase: 300, prizePer: 40, prizeCap: 3000, jitter: 0.2, split: [60, 25, 15] },
   },
   royale: { lobbySec: 60, minPlayers: 3, maxPlayers: 40, prizeBase: 300, prizePer: 40, prizeCap: 3000, jitter: 0.2, runnerUpPct: 15 },
-  heist: { lobbySec: 90, minStake: 50, maxStake: 1000, minCrew: 2, maxCrew: 12, cooldownSec: 600 },
+  // v1.18 (Sky): the heist join / planning window is 2 minutes by default (Events tab → Heist planning time)
+  heist: { lobbySec: 120, minStake: 50, maxStake: 1000, minCrew: 2, maxCrew: 12, cooldownSec: 600 },
   give: { modDailyCap: 5000, modMaxPerGive: 1000 },
   predictions: { minBet: 10, maxBet: 10000, noWinnerPolicy: 'refund' },
   prices: { starter: 0, common: 300, rare: 1000, epic: 2500, legendary: 6000 },
@@ -60,6 +61,19 @@ export const DEFAULT_ECONOMY = deepFreeze({
     { id: 'halloween', name: 'Spooky Season', from: '10-01', to: '11-02' },
     { id: 'winter', name: 'Winter Holidays', from: '12-01', to: '01-06' },
   ],
+  // ───── v1.18 (games round 5)
+  // Pepe's Plinko `!plinko <amount> [low|mid|high] [drops]`: RTP low 97.6 % / mid 96.1 % / high 95.4 % (games/plinko.mjs plinkoTheory)
+  plinko: { minBet: 10, maxBet: 1000, maxRuns: 5, risk: 'mid' },
+  // Sayok's Hot Potato `!potato [entry]`: a lobby of 3–12, `blasts` bombs (≤ players − 1); survivors split every entry + a bank
+  // bonus of min(bonusCap, bonusMin + bonusPct % of the pot) → EV per player = +bonus / players (games/potato.mjs potatoTheory)
+  potato: { lobbySec: 45, minPlayers: 3, maxPlayers: 12, maxEntry: 1000, blasts: 3, bonusPct: 10, bonusMin: 100, bonusCap: 1000 },
+  // ───── v1.21 (games round 6)
+  // Klerb's Chaos Wheel `!wheel <amount> [spins]`: 16 equal slices, RTP 96.25 % (games/wheel.mjs wheelTheory)
+  wheel: { minBet: 10, maxBet: 1000, maxRuns: 3 },
+  // the Dance-Off `!danceoff @user [amount]`: a 1v1 like a fight; chat votes 1 / 2 for 20 s; the winner takes the pot (EV 0)
+  danceoff: { minBet: 10, maxBet: 5000, acceptSec: 45, rakePct: 0, pairLimitPerStream: 3 },
+  // emotes (`!dance [style]`, `!emote <name>`): besides cooldown.emoteSec per viewer, at most `perWindow` on stage per `windowSec`
+  emotes: { perWindow: 12, windowSec: 10 },
   botLogins: ['nightbot', 'streamelements', 'streamlabs', 'moobot', 'fossabot', 'wizebot', 'soundalerts', 'sery_bot',
     'kofistreambot', 'commanderroot'],
 });

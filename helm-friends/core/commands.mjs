@@ -4,6 +4,8 @@
 
 import { parseAmountLiteral } from './money.mjs';
 import { pickNumbers } from './games/roulette.mjs';
+import { PLINKO_WORDS } from './games/plinko.mjs';
+import { emoteOf, danceStyleOf, EMOTE_LIST } from './emotes.mjs';
 
 /**
  * Every command: default triggers, who may use it, and its usage line. Triggers are renamable (ctxLite.triggers).
@@ -21,6 +23,14 @@ export const COMMANDS = Object.freeze({
   roulette: { triggers: ['!roulette'], who: 'everyone', usage: '!roulette 100 red (or !roulette 100 red 3 for 3 spins)', gambling: true },
   flip: { triggers: ['!flip', '!coinflip'], who: 'everyone', usage: '!flip 100 heads (or tails; add 1-5 for more flips)', gambling: true },
   race: { triggers: ['!race'], who: 'everyone', usage: '!race @user 100', gambling: true },
+  // v1.18: Pepe's Plinko (solo) and Sayok's Hot Potato (party: !potato opens, !join joins, !pass @user tosses the bomb)
+  plinko: { triggers: ['!plinko'], who: 'everyone', usage: '!plinko 100 (or !plinko 100 high 3: board low/mid/high, 1-5 drops)', gambling: true },
+  potato: { triggers: ['!potato', '!hotpotato'], who: 'everyone', usage: '!potato 50 (opens a game with a 50 entry; !potato for a free one)', gambling: true },
+  pass: { triggers: ['!pass', '!toss'], who: 'everyone', usage: '!pass @user (or just !pass for a random player)' },
+  // v1.21 (games round 6): Klerb's Chaos Wheel (solo), the Dance-Off (1v1, chat votes 1 / 2), !vote (= typing 1 or 2)
+  wheel: { triggers: ['!wheel', '!chaoswheel'], who: 'everyone', usage: '!wheel 100 (or !wheel 100 3 for 3 spins)', gambling: true },
+  danceoff: { triggers: ['!danceoff', '!dancebattle'], who: 'everyone', usage: '!danceoff @user 100 (chat votes 1 or 2 for the winner)', gambling: true },
+  vote: { triggers: ['!vote'], who: 'everyone', usage: '!vote 1 (or just type 1 or 2 during a Dance-Off)' },
   grandprix: { triggers: ['!gp', '!grandprix'], who: 'mod', usage: '!gp [entry fee] (then !gp start or !gp cancel)', gambling: true },
   royale: { triggers: ['!royale', '!br'], who: 'mod', usage: '!royale (then !royale start or !royale cancel)', gambling: true },
   join: { triggers: ['!join'], who: 'everyone', usage: '!join' },
@@ -32,10 +42,12 @@ export const COMMANDS = Object.freeze({
   take: { triggers: ['!take'], who: 'broadcaster', usage: '!take @user 500' },
   redeem: { triggers: ['!redeem'], who: 'everyone', usage: '!redeem <reward name> [your text]' },
   jump: { triggers: ['!jump'], who: 'everyone', usage: '!jump', emote: true },
-  dance: { triggers: ['!dance'], who: 'everyone', usage: '!dance', emote: true },
+  dance: { triggers: ['!dance'], who: 'everyone', usage: '!dance (or !dance robot, disco, floss, worm…)', emote: true },
   wave: { triggers: ['!wave'], who: 'everyone', usage: '!wave', emote: true },
   sit: { triggers: ['!sit'], who: 'everyone', usage: '!sit', emote: true },
   cheer: { triggers: ['!cheer'], who: 'everyone', usage: '!cheer', emote: true },
+  // v1.21: !emote <name> (core emotes.mjs EMOTE_LIST: love laugh cry rage sleep flex party glorp klerb sayok …)
+  emote: { triggers: ['!emote'], who: 'everyone', usage: '!emote love (or laugh, cry, rage, sleep, flex, party, glorp, klerb, sayok)' },
   show: { triggers: ['!show'], who: 'everyone', usage: '!show' },
   hide: { triggers: ['!hide'], who: 'everyone', usage: '!hide' },
   // v1.11 (Sky): !helmfriends (aliases !hf, !helm, !friends) posts the web app link - or "coming soon" until it is published
@@ -125,14 +137,25 @@ export function parseCommand(text, ctxLite = {}) {
   const cmd = COMMANDS[key];
   const usage = (code = 'USAGE') => ({ kind: 'error', cmd: key, code, usage: cmd.usage });
 
+  if (key === 'dance') {   // v1.21: !dance [style]; "!dance @user 100" is the Dance-Off challenge
+    if (args[0] && args[0].startsWith('@')) return parseCommand(['!danceoff', ...args].join(' '));
+    const style = danceStyleOf(args[0]);
+    return style ? { kind: 'emote', name: 'dance', style } : { kind: 'emote', name: 'dance' };
+  }
   if (cmd.emote) return { kind: 'emote', name: key };
+  if (key === 'emote') {   // v1.21
+    const e = emoteOf(args[0]);
+    if (!e) return usage();
+    const style = e === 'dance' ? danceStyleOf(args[1]) : null;
+    return { kind: 'emote', name: EMOTE_LIST[e].anim, emote: e, ...(style ? { style } : {}) };
+  }
   switch (key) {
     case 'balance': {
       if (!args.length) return { kind: 'balance' };
       const target = parseTarget(args[0]);
       return target ? { kind: 'balance', target } : { kind: 'balance' };
     }
-    case 'fight': case 'armwrestle': {
+    case 'fight': case 'armwrestle': case 'danceoff': {
       let [x, y] = args;
       if (isAmountLike(x) && y && y.startsWith('@')) [x, y] = [y, x];   // "!fight 100 @bob"
       const target = parseTarget(x);
@@ -141,7 +164,11 @@ export function parseCommand(text, ctxLite = {}) {
     }
     case 'accept': case 'decline': case 'join': case 'show': case 'hide': case 'link':
       return { kind: key };
-    case 'slots': case 'cursed': {
+    case 'vote': {   // v1.21
+      const n = /^[12]$/.test(args[0] || '') ? Number(args[0]) : null;
+      return n ? { kind: 'vote', n } : usage();
+    }
+    case 'slots': case 'cursed': case 'wheel': {
       const r = splitRuns(args.slice(0, 3));
       if (!r || r.rest.length !== 1) return usage();
       return { kind: key, amount: amountTok(r.rest[0]), runs: r.runs };
@@ -163,6 +190,28 @@ export function parseCommand(text, ctxLite = {}) {
       const r = splitRuns(others);
       if (!r || r.rest.length !== 1) return usage();
       return { kind: 'flip', amount: amountTok(r.rest[0]), call: call || 'heads', runs: r.runs };
+    }
+    case 'plinko': {   // v1.18: amount, an optional board word, an optional drop count, in any order
+      let risk = null; const others = [];
+      for (const tok of args.slice(0, 4)) {
+        const w = PLINKO_WORDS[tok.toLowerCase()];
+        if (w && !isAmountLike(tok)) { if (risk) return usage(); risk = w; } else others.push(tok);
+      }
+      const r = splitRuns(others);
+      if (!r || r.rest.length !== 1) return usage();
+      return { kind: 'plinko', amount: amountTok(r.rest[0]), risk, runs: r.runs };
+    }
+    case 'potato': {   // v1.18: !potato [entry] opens (or joins an open one); !potato start / cancel (opener, mods, Sky)
+      const a = (args[0] || '').toLowerCase();
+      if (!a) return { kind: 'potato', op: 'open', entry: null };
+      if (a === 'start' || a === 'go') return { kind: 'potato', op: 'start', entry: null };
+      if (a === 'cancel' || a === 'stop') return { kind: 'potato', op: 'cancel', entry: null };
+      return isAmountLike(a) && a !== 'all' && a !== 'half' ? { kind: 'potato', op: 'open', entry: amountTok(a) } : usage();
+    }
+    case 'pass': {
+      if (!args.length) return { kind: 'pass', target: null };
+      const target = parseTarget(args[0]);
+      return target ? { kind: 'pass', target } : usage();
     }
     case 'race': {
       let [x, y] = args;

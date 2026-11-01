@@ -17,10 +17,10 @@ import { toast } from './toast.mjs';
 import { coinImg } from './shell.mjs';
 
 export const CHALLENGE_GAMES = [
-  ['fight', 'Fight', 'a fight'], ['armwrestle', 'Arm wrestle', 'an arm wrestle'], ['race', 'Gleep Race', 'a Gleep Race'],
+  ['fight', 'Fight', 'a fight'], ['armwrestle', 'Arm wrestle', 'an arm wrestle'], ['race', 'Gleep Race', 'a Gleep Race'], ['danceoff', 'Dance-Off', 'a Dance-Off'],   // v1.21
 ];
 const GAME_NAME = Object.fromEntries(CHALLENGE_GAMES.map(([k, , a]) => [k, a]));
-const LIMIT_KEY = { fight: 'fight', armwrestle: 'armwrestle', race: 'race' };
+const LIMIT_KEY = { fight: 'fight', armwrestle: 'armwrestle', race: 'race', danceoff: 'danceoff' };
 
 /**
  * @param {{ store:Object, api:Object, actions:Object, go:(r:string)=>void, compact?:boolean, now?:()=>number }} o
@@ -160,11 +160,11 @@ export function createPlay({ store, api, actions, go, compact = false, now = () 
       h('h3', { class: 'section-title' }, 'More ways to play'),
       h('div', { class: 'card' },
         h('ul', { class: 'plain-list' },
-          h('li', null, 'Heists, battle royales and the Gleep Grand Prix: when one opens, a "Live events" card shows at the top of every screen with a Join button (pick your heist role there).'),
+          h('li', null, 'Heists, battle royales and the Gleep Grand Prix: when one opens, it pops up at the top of every screen: tap Join, or for a heist tap the role you want (switch or leave any time before it starts).'),
           h('li', null, 'Predictions: bet ', PSD, ' on the live prediction bar at the top.'),
           h('li', null, 'Daily check-in: the Today card at the top, once a day.'),
           h('li', null, h('a', { href: '#/unlocks', 'data-fk': 'play-unlocks', onclick: (e) => { e.preventDefault(); go('unlocks'); } }, 'Channel unlocks'), ': spend ', PSD, ' on the stream.')),
-        compact ? null : h('p', { class: 'small muted' }, 'Slots, roulette, the coin flip and Sayok\'s cursed slot are played in chat (see Help).')),
+        compact ? null : h('p', { class: 'small muted' }, 'Slots, Pepe\'s Plinko, roulette, the coin flip and Sayok\'s cursed slot are played in chat (see Help). In Sayok\'s Hot Potato you join here or with !join, and toss the bomb in chat with !pass @name.')),
     ];
   }
 

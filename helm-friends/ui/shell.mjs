@@ -24,9 +24,9 @@ export const MENU = [
 ];
 
 /**
- * @param {{ mode:'web'|'ext'|'local', go:(route:string)=>void, actions:Object, links:{ privacy:string, terms:string, app?:string } }} o
+ * @param {{ mode:'web'|'ext'|'local', go:(route:string)=>void, actions:Object, links:{ privacy:string, terms:string, app?:string }, twitchUrl?:string }} o
  */
-export function createShell({ mode, go, actions, links }) {
+export function createShell({ mode, go, actions, links, twitchUrl = '' }) {
   const compact = mode === 'ext';
   const balanceBox = h('div', { class: 'hf-balance-box' });
   const header = h('header', { class: 'hf-header' },
@@ -42,7 +42,12 @@ export function createShell({ mode, go, actions, links }) {
   const live = h('div', { class: 'hf-live', 'aria-label': 'Live now', role: 'region' });
   const main = h('main', { class: 'hf-main', id: 'hf-main', tabindex: '-1' });
   const ribbon = h('div', { class: 'ribbon', hidden: true, role: 'note' }, h('b', null, 'PLAYTEST'), compact ? ' · resets before launch' : ' · everything resets before the real launch');
+  // Sky: the credit + his Twitch link at the bottom of every layout (web app, panel). Opens in a new tab everywhere: the
+  // panel iframe can't navigate itself away, and www.twitch.tv is on the extension's panel link-out allowlist.
+  const credit = h('p', { class: 'footer-credit', 'data-testid': 'credit' }, 'Created by ',
+    twitchUrl ? h('a', { href: twitchUrl, target: '_blank', rel: 'noopener noreferrer', 'data-fk': 'credit-twitch' }, 'The Pepe Silvia Show') : h('b', null, 'The Pepe Silvia Show'));
   const footer = h('footer', { class: 'footer' },
+    credit,
     h('p', null, `${PSD} are free play money with no cash value.`),
     h('p', null,
       links.app && h('a', { href: links.app, target: '_blank', rel: 'noopener' }, 'Open the full web app'),
@@ -51,6 +56,10 @@ export function createShell({ mode, go, actions, links }) {
   const el = h('div', { class: ['hf-app', compact && 'compact'], 'data-mode': mode },
     h('a', { class: 'skip-link', href: '#hf-main' }, 'Skip to content'),
     ribbon, header, menu, notes, live, main, footer);
+
+  // launch audit: the desktop layout shows the live column only when something is in it
+  const liveCheck = () => el.classList.toggle('has-live', !!live.textContent.trim());
+  try { new MutationObserver(liveCheck).observe(live, { childList: true, subtree: true, characterData: true }); } catch { /* old browser: one column */ }
 
   function update(st) {
     ribbon.hidden = !(st.season && st.season.playtest);

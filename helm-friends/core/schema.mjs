@@ -83,7 +83,7 @@ export const WORN = obj({
 /** CONTRACTS §3.2, stored as JSON (max 4 KB — checked by validateSpec). */
 export const CHARACTER_SPEC = obj({
   v: int(1, 1),
-  species: str(16, { enum: ['human', 'dragon', 'ape', 'cat', 'dog', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown', 'mecha'] }),
+  species: str(16, { enum: ['human', 'dragon', 'ape', 'cat', 'dog', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown', 'werewolf', 'skeleton', 'zombie', 'mecha'] }),
   model: int(1, 2),
   body: str(8, { enum: ['slim', 'average', 'broad'] }),
   height: str(8, { enum: ['short', 'medium', 'tall'] }),
@@ -98,6 +98,10 @@ export const CHARACTER_SPEC = obj({
   wear: obj(Object.fromEntries(['hat', 'eyewear', 'ear', 'nose', 'shirt', 'pants', 'shoes'].map((s) => [s, nul(WORN)])), []),
   unique: nul(str(16)),
   pet: nul(obj({ item: CATALOG_ID, colors: { t: 'array', items: HSV, max: 3 }, name: str(20) }, ['item'])),   // v1.12 (art round 3): optional
+  gloves: nul(WORN),
+  extras: nul(obj({ neck: nul(WORN), back: nul(WORN), held: nul(WORN), aura: nul(WORN) }, [])),   // v1.22: optional cosmetic extras                                 // v1.18 (art batch 2): optional; normalizeSpec fills the classic pair
+  tag: nul(obj({ shape: CATALOG_ID, colors: { t: 'array', items: HSV, max: 1 }, name: CATALOG_ID, font: CATALOG_ID }, [])),   // v1.18: optional name tag style
+  faith: nul(str(16, { re: /^[a-z][a-z0-9_]{0,15}$/ })),   // SH Gods BRIDGE: the viewer's god (core faiths.mjs FAITHS ids; Sky's gods = config) - optional
   vehicles: obj({                                    // v1.8: optional; normalizeSpec fills the defaults
     car: obj({ body: WORN, wheels: WORN, decal: nul(WORN) }, []),
     ufo: obj({ hull: WORN, dome: WORN, lights: nul(WORN), trail: nul(WORN) }, []),
@@ -121,7 +125,10 @@ export const HF_REWARD = obj({
   image: nul(str(500, { re: /^https:\/\// })),
   featureId: nul(str(64)),
   liveOnly: { t: 'bool' },
-}, ['id', 'currency', 'title', 'prompt', 'cost', 'inputRequired', 'enabled', 'paused']);
+  hidden: { t: 'bool' },            // StreamHelm 4.4.6: its "When does this reward show?" conditions are false right now
+  hiddenWhy: nul(str(120)),         // (not shown, not redeemable); hiddenWhy = the plain-English reason, for logs
+  form: nul(str(16, { enum: ['cameo'] })),   // SH Gods BRIDGE: the web app shows a picker that fills `input` (cameo: body + race)
+},['id', 'currency', 'title', 'prompt', 'cost', 'inputRequired', 'enabled', 'paused']);
 
 /** Admin → create a prediction. */
 export const PREDICTION_CREATE = obj({

@@ -19,6 +19,8 @@ import { createHelp } from './help.mjs';
 import { createSettings } from './settings.mjs';
 import { connectRealtime } from './realtime.mjs';
 import { loadArt } from './avatar-render.mjs';
+import { createTryOn } from './tryon.mjs';
+import { createSide } from './side.mjs';
 import { liveRegion, announce } from './a11y.mjs';
 import { toast } from './toast.mjs';
 
@@ -82,18 +84,21 @@ export function mountApp(root, { config, auth, fetchFn }) {
 
   const art = loadArt(config.artBase || './art/', { fetchFn }).catch(() => null);
   const previews = (it) => (config.artBase || './art/') + it.preview;
-  const shell = createShell({ mode, go, actions, links: config.links });
+  // launch audit: shop items are shown worn on a character (a bust for head items), never as a floating head
+  const tryOn = createTryOn({ art, catalog: () => store.get().catalog || buildCatalog(), baseSpec: () => (store.get().character && store.get().character.spec) || null });
+  const shell = createShell({ mode, go, actions, links: config.links, twitchUrl: config.twitchUrl });
   const pages = {
     character: createEditor({ store, api, actions, art }),
     play: createPlay({ store, api, actions, go, compact: mode === 'ext' }),
-    unlocks: createUnlocks({ store, api, actions, previews, twitchUrl: config.twitchUrl }),
+    unlocks: createUnlocks({ store, api, actions, previews, tryOn, twitchUrl: config.twitchUrl }),
     help: createHelp({ store, mode, links: config.links }),
     history: createHistory({ store, api, actions }),
     settings: createSettings({ store, api, actions, mode }),
   };
   const preds = createPredictions({ store, api, actions, compact: mode === 'ext' });
   const today = createToday({ store, api, actions, go });   // v1.11: check-in, auto character, follow note, Live events
-  shell.live.append(pages.play.inbox, today.el, preds.el);   // v1.14: incoming challenges show on every screen
+  const side = createSide({ store, art, go, actions });   // launch audit: the desktop side column (≥ 1100 px only)
+  shell.live.append(pages.play.inbox, today.el, preds.el, side.el);   // v1.14: incoming challenges show on every screen
   mount(shell.main, Object.values(pages).map((p) => p.el));
   mount(root, shell.el);
   liveRegion();
@@ -117,7 +122,7 @@ export function mountApp(root, { config, auth, fetchFn }) {
     if (cfg instanceof ApiError) { noteError(cfg); if (!store.get().catalog) store.set({ catalog: buildCatalog() }); }
     else {
       setData({ online: true, live: typeof cfg.live === 'boolean' ? cfg.live : null, help: Array.isArray(cfg.help) ? cfg.help : null,
-        pointsName: cfg.pointsName || null, season: cfg.season || null, economy: cfg.economy || null });
+        pointsName: cfg.pointsName || null, season: cfg.season || null, economy: cfg.economy || null, auto: Array.isArray(cfg.auto) ? cfg.auto : [] });
     }
     if (!(catalog instanceof ApiError)) setData({ catalog }); else if (!store.get().catalog) store.set({ catalog: buildCatalog() });
     if (!(rewards instanceof ApiError)) setData({ rewards: rewards.rewards || [] });
@@ -176,6 +181,7 @@ export function mountApp(root, { config, auth, fetchFn }) {
       case 'live': if (typeof d.live === 'boolean') setData({ live: d.live }); break;
       case 'challenges': loadChallenges(); break;   // v1.14: someone challenged me / my challenge was answered or ran out
       case 'game': case 'stage':
+        if (type === 'game' && d && d.status === 'settled' && d.summary && !(st.recentGames || []).some((g) => g.id === d.id)) store.set({ recentGames: [{ id: d.id, summary: String(d.summary).slice(0, 200) }, ...(st.recentGames || [])].slice(0, 8) });
         loadLobbies();   // v1.11: a lobby opened / filled / closed
         if (st.loggedIn && type === 'game') { loadChallenges(); if (d && d.status === 'settled') loadMine(); }   // v1.14: winnings land in my balance
         break;

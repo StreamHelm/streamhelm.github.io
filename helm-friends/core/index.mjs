@@ -30,14 +30,23 @@ export { openSeasons, seasonOfItem, seasonalOnSale } from './seasonal.mjs';
 export { composeFrame as composeSprite, partsForSpec as spriteParts, composePet } from './sprite.mjs';
 export { renderCard, CARD, textWidth, fitText } from './card.mjs';
 export { cursedTheory, CURSED_PAYTABLE, CURSED_REEL } from './games/cursed.mjs';
+// ───── v1.18 (games round 5)
+export { plinkoTheory, PLINKO_BOARDS, PLINKO_RISKS, PLINKO_RISK_NAMES, PLINKO_WORDS, PLINKO_ROWS, PLINKO_SHOW } from './games/plinko.mjs';
+export { potatoTheory, potatoTimeline, potatoPass, potatoHolder, potatoBonus, potatoBlasts, potatoSeats, POTATO } from './games/potato.mjs';
+// ───── v1.21 (games round 6)
+export { wheelTheory, WHEEL_SEGS, WHEEL_SHOW, WHEEL_RAIN_MULT, CHAOS } from './games/wheel.mjs';
+export { DANCE, parseVote, danceTally, danceVote } from './games/danceoff.mjs';
+export { EMOTE_LIST, EMOTE_WORDS, EMOTE_NAMES, DANCE_WORDS, emoteOf, danceStyleOf, emoteFeed } from './emotes.mjs';
+export { DEFAULT_NAME_TAG, OVERLAY_FONTS, DEFAULT_OVERLAY, NAME_COLOR_CSS, nameOptions, hasNameTags, nameFlagsCheck, nameTagOf, normalizeOverlay, isCostume, tagOfSpec } from './nametag.mjs';
 export { FAKE_BASE, fakeId, isFakeId, fakeName, actCommand, DEFAULT_CROWD, crowdActions, TEST_TRIGGERS } from './testspace.mjs';
 export { COMMANDS, ROLE_ALIASES, FLIP_WORDS, MAX_RUNS, splitRuns, parseCommand, parsePick, parseTarget, cleanText, triggerMap, canUse, isGambling, matchReward } from './commands.mjs';
-export { scriptBuilder, validateScript, clip, ANIMS, EXPRESSIONS, BEAT_OPS, PROP_KINDS, SKY_PROPS, OWNED_PROPS, CROWDS, FX, HOUSE, EVERYONE, HOSTS } from './script.mjs';
+export { scriptBuilder, validateScript, clip, ANIMS, EXPRESSIONS, BEAT_OPS, PROP_KINDS, SKY_PROPS, OWNED_PROPS, CROWDS, FX, HOUSE, EVERYONE, HOSTS, LAYERS, COSTUME_KEYS, CHAOS_EFFECTS, DANCE_STYLES } from './script.mjs';
 export { COIN_RAIN, coinRainCount, coinRainWaves } from './coins.mjs';
 export {
   outcomeByN, betCheck, betIntent, refundDollahPool, settleDollahPool, totalsFrom, percentages, bars, barCaption,
-  onTwitchEvent, atLockTime,
+  onTwitchEvent, atLockTime, dollahResults, pointsResults, predictionResults,
 } from './predictions.mjs';
+export { FAITHS, normalizeFaiths, faithOf } from './faiths.mjs';   // SH Gods BRIDGE: a viewer's god (spec.faith)
 export { check, HSV, WORN, CHARACTER_SPEC, HF_REWARD, PREDICTION_CREATE, BODIES as REQUEST_BODIES, LEDGER_INTENT } from './schema.mjs';
 export { HELP, buildHelp, helpFor, helpLine, commandList, linkLine } from './help.mjs';
 export { GAMES, MULTI_RUN, playGame } from './games/index.mjs';
@@ -52,9 +61,11 @@ export { buildCatalog, indexCatalog, itemById, itemsBySlot, isUnlocked, priceOf,
 export {
   normalizeSpec, validateSpec, saveRejection, defaultSpec, uniqueSpec, randomStarterSpec, describeSpec, itemsInSpec,
   skinTone, clampHsv, SPECIES, RESERVED_SPECIES, MODELS, BODIES, HEIGHTS, WEAR_SLOTS, EYE_PRESETS,
-  BREED_SPECIES, COAT_SPECIES, EAR_SPECIES, WING_SPECIES,
+  BREED_SPECIES, COAT_SPECIES, EAR_SPECIES, WING_SPECIES, DEFAULT_GLOVES, DEFAULT_TAG, EXTRA_SLOTS,
 } from './avatar/spec.mjs';
 export {
   VEHICLE_KINDS, VEHICLE_PARTS, VEHICLE_OPTIONAL, VEHICLE_DEFAULTS, VEHICLE_COLORS, VEHICLE_ROWS, defaultVehicles, vehicleOf, vehicleItems,
 } from './avatar/vehicles.mjs';
 export { layerOrder, rampFor, recolour, stretchRows, heightRows, hsvToRgb, rgbToHsv, fxColor, HEIGHT_ROWS, bodyColors } from './avatar/compose.mjs';
+export { COSTUMES, COSTUME_PARTS, applyCostume, isCostumePart } from './avatar/costumes.mjs';   // COSTUME_KEYS comes via script.mjs (the same list)   // v1.18
+export { BASE_ANIMS, IDLE_VARIANTS, FIGHT_ANIMS, STRIKES, ART_ANIMS } from './avatar/anims.mjs';   // v1.18

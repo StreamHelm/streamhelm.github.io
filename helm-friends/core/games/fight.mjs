@@ -94,7 +94,7 @@ export const GAME = Object.freeze({
     const { a, b } = input, { winner, loser } = outcome;
     const X = { [a]: 0.42, [b]: 0.58 };
     const s = scriptBuilder({ id: ctx.gameId || 'g_preview', kind: 'fight', startsAt: ctx.now, crowd: 'others-hide' })
-      .cast(a, 'a').cast(b, 'b').cast(HOUSE, 'announcer')
+      .cast(a, 'a').cast(b, 'b').cast(HOUSE, 'announcer', { costume: 'referee' })   // v1.18: PepeBot referees in stripes
       .prop('ring', 'ring', 0.5, 1, 'idle').prop('hpA', 'hpBar', 0.3, 0, 'hidden').prop('hpB', 'hpBar', 0.7, 0, 'hidden');
     s.at(0, 'moveTo', a, { x: X[a], lane: 1, speed: 'run' }).at(0, 'moveTo', b, { x: X[b], lane: 1, speed: 'run' });
     s.at(0, 'moveTo', HOUSE, { x: 0.5, lane: 2, speed: 'walk' });

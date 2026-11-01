@@ -11,7 +11,7 @@ import { mulDiv } from '../money.mjs';
 import { SYS } from '../ledger.mjs';
 import { fail } from '../errors.mjs';
 import { scriptBuilder, HOUSE, clip } from '../script.mjs';
-import { isId, checkStake, settleLine, stakeIntent, at, spread } from './common.mjs';
+import { isId, checkStake, settleLine, stakeIntent, at, spread, crowdReact } from './common.mjs';
 import { fmt } from '../format.mjs';
 
 /** The five roles that "cover" something; first come, first served. */
@@ -43,7 +43,8 @@ export const HEIST = Object.freeze({
 });
 
 /** Show timing (ms): planning at the table, the walk to the bank, the wait inside, then the outcome (≈ 35–45 s). */
-const SHOW = Object.freeze({ walkAt: 8000, doorAt: 12000, insideLo: 9000, insideHi: 13000, outroMs: 9000 });
+/** v1.18 cinematic timing (ms): the planning room, the drive, entering, inside (random 9–13 s), the exit + result. ≈ 45–55 s. */
+export const CINE = Object.freeze({ planAt: 4200, driveAt: 9500, boardMs: 1800, enterGap: 2200, doorAfter: 3200, insideLo: 9000, insideHi: 13000, outroMs: 9500 });
 
 /**
  * The crew's chances. Probabilities are plain floats (never money).
@@ -243,68 +244,117 @@ export const GAME = Object.freeze({
     return out;
   },
 
+  /**
+   * v1.18 heist cinematic (Sky): a short film in scenes. The `scene` prop (kind heistScene, sky) carries the scene name
+   * as its state so the overlay can cut / dress the stage; every scene is also played with ordinary beats, so an overlay
+   * that ignores heistScene still shows a sensible heist. Scene states, in order:
+   *   room            the planning room: the crew walks in ONE BY ONE and gathers round the plan (table 'plan')
+   *   drive           the getaway car pulls up, the crew piles in (hide), the car drives off ('leave')
+   *   enter           the car arrives at the Silvia Bank; the robbers (everyone but the driver, who waits at the wheel)
+   *                   get out, put masks on, walk in (bank doorOpen, hide)
+   *   inside:<n>      n robbers inside: the bank shows their SILHOUETTES in the windows (bank state silhouettes:<n>)
+   *   alarm           (not on a clean job) the alarm goes off (bank alarm)
+   *   exit            the doors burst open: paid robbers run out with bags to the car, the lucky ones flee, the rest are cuffed
+   *   result:<band>   the result scene: clean | messy | escaped | busted (+ a banner)
+   */
   choreograph(input, outcome, rng, ctx) {
-    const crew = outcome.members, n = crew.length;   // the members carry the final roles (after the driver draft)
+    const crew = outcome.members, n = crew.length, S = CINE, band = outcome.band;   // the members carry the final roles (after the draft)
+    const driver = outcome.driver && crew.some((m) => m.player === outcome.driver) ? outcome.driver : null;
+    const robbers = crew.filter((m) => m.player !== driver), r = robbers.length;
+    const driverM = driver ? crew.find((m) => m.player === driver) : null;
     const s = scriptBuilder({ id: ctx.gameId || 'g_preview', kind: 'heist', startsAt: ctx.now, crowd: 'others-watch' });
     crew.forEach((m) => s.cast(m.player, 'crew:' + m.role));
     s.prop('table', 'heistTable', 0.25, 1, 'idle').prop('bank', 'bank', 0.72, 2, 'idle')
       // v1.9: the getaway car is the driver's own car design (their spec.vehicles.car); no driver = the default car
       .prop('getaway', 'getawayCar', 0.92, 0, 'hidden', outcome.driver ? { owner: outcome.driver } : undefined)
-      .prop('cop1', 'copCar', 0.55, 0, 'hidden').prop('cop2', 'copCar', 0.95, 0, 'hidden');
-    const copsCome = outcome.band !== 'clean';
-    if (copsCome) s.cast(HOUSE, 'cop');
-    // 1. planning at the table
-    const tableX = spread(n, 0.12, 0.38);
-    crew.forEach((m, i) => s.at(Math.round((i * 1200) / n), 'moveTo', m.player, { x: tableX[i], lane: i % 2 ? 2 : 0, speed: 'walk' }));
-    s.at(2500, 'prop', null, { id: 'table', state: 'plan' });
-    rng.shuffle(crew).slice(0, Math.min(4, n)).forEach((m, i) => s.say(2800 + i * 900, m.player, rng.pick(['?!', 'The vault is HERE.', 'Easy money.', 'Wait, what?', 'I call shotgun.']), 1200));
-    // 2. walk to the Silvia Bank and slip inside
-    const doorX = spread(n, 0.66, 0.78);
-    crew.forEach((m, i) => s.at(SHOW.walkAt + i * 120, 'moveTo', m.player, { x: doorX[i], lane: 2, speed: 'walk' }));
-    s.at(SHOW.doorAt, 'prop', null, { id: 'bank', state: 'doorOpen' });
-    crew.forEach((m, i) => s.at(SHOW.doorAt + 300 + i * 150, 'hide', m.player));
-    const inside = rng.int(SHOW.insideLo, SHOW.insideHi), T = SHOW.doorAt + 300 + n * 150 + inside;
-    if (outcome.band !== 'clean') s.at(T - Math.round(inside / 2), 'prop', null, { id: 'bank', state: 'alarm' });
-    // 3. the outcome
-    const paid = outcome.members.filter((m) => m.fate === 'paid');
+      .prop('cop1', 'copCar', 0.55, 0, 'hidden').prop('cop2', 'copCar', 0.95, 0, 'hidden')
+      .prop('scene', 'heistScene', 0.5, 1, 'room', { y: 0.1, label: clip(`HEIST · ${n} in the crew`, 60) });
+    const copsCome = band !== 'clean';
+    if (copsCome) s.cast(HOUSE, 'cop', { costume: 'police' });   // v1.18 art costume
+    const scene = (t, st) => s.at(t, 'prop', null, { id: 'scene', state: st });
+    // 1. the planning room: arrivals one by one
+    const tableX = spread(n, 0.12, 0.38), gap = Math.min(600, Math.floor(4800 / n));
+    crew.forEach((m, i) => { s.at(i * gap, 'moveTo', m.player, { x: tableX[i], lane: i % 2 ? 2 : 0, speed: 'walk' }); s.at(i * gap + 2200, 'face', m.player, { dir: 'back' }); });
+    s.at(S.planAt, 'prop', null, { id: 'table', state: 'plan' });
+    rng.shuffle(crew).slice(0, Math.min(4, n)).forEach((m, i) => s.say(S.planAt + 300 + i * 900, m.player,
+      m.player === driver ? rng.pick(["I'll bring the car.", 'Engine is warm.']) : rng.pick(['?!', 'The vault is HERE.', 'Easy money.', 'Wait, what?', 'I call shotgun.']), 1200));
+    // 2. the drive: the car pulls up, everyone piles in, off it goes
+    scene(S.driveAt, 'drive');
+    s.at(S.driveAt, 'prop', null, { id: 'getaway', state: 'arrive' });
+    const carX = spread(n, 0.84, 0.97);
+    crew.forEach((m, i) => { s.at(S.driveAt + 300 + i * 80, 'moveTo', m.player, { x: carX[i], lane: 0, speed: 'run' }); s.at(S.driveAt + S.boardMs + i * 90, 'hide', m.player); });
+    const departAt = S.driveAt + S.boardMs + n * 90 + 400;
+    s.at(departAt, 'prop', null, { id: 'getaway', state: 'leave' });
+    // 3. enter the Silvia Bank (the driver waits at the wheel)
+    const E = departAt + S.enterGap;
+    scene(E, 'enter');
+    s.at(E, 'prop', null, { id: 'getaway', state: 'arrive' });
+    const doorX = spread(r, 0.66, 0.78);
+    robbers.forEach((m, i) => {
+      s.at(E + 1500 + i * 120, 'show', m.player).at(E + 1500 + i * 120, 'equip', m.player, { layer: 'mask' });
+      s.at(E + 1600 + i * 120, 'moveTo', m.player, { x: doorX[i], lane: 2, speed: 'walk' });
+    });
+    const door = E + S.doorAfter;
+    s.at(door, 'prop', null, { id: 'bank', state: 'doorOpen' });
+    robbers.forEach((m, i) => s.at(door + 300 + i * 150, 'hide', m.player));
+    const inAt = door + 300 + r * 150 + 300, inside = rng.int(S.insideLo, S.insideHi), T = inAt + inside;
+    scene(inAt, `inside:${r}`);
+    s.at(inAt, 'prop', null, { id: 'bank', state: `silhouettes:${r}` });
+    if (copsCome) { const a = T - Math.round(inside / 2); scene(a, 'alarm'); s.at(a, 'prop', null, { id: 'bank', state: 'alarm' }); }
+    // 4. the exit
     if (copsCome) {
       s.at(T - 1200, 'prop', null, { id: 'cop1', state: 'arrive' });
-      if (outcome.band === 'busted') s.at(T - 1000, 'prop', null, { id: 'cop2', state: 'arrive' });
+      if (band === 'busted') s.at(T - 1000, 'prop', null, { id: 'cop2', state: 'arrive' });
       s.at(T - 600, 'moveTo', HOUSE, { x: 0.6, lane: 1, speed: 'run' });
-      s.say(T - 200, HOUSE, outcome.band === 'busted' ? "Book 'em." : 'FREEZE!', 1500);
+      s.say(T - 200, HOUSE, band === 'busted' ? "Book 'em." : 'FREEZE!', 1500);
     }
-    const getaway = outcome.band === 'clean' || outcome.band === 'messy';   // the driver's car comes for whoever has the loot
-    if (getaway) s.at(T - 1500, 'prop', null, { id: 'getaway', state: 'arrive' });
-    outcome.members.forEach((m, i) => {
+    scene(T, 'exit');
+    const arrest = (id, t) => {
+      s.at(t + 300, 'anim', id, { name: 'arrested', hold: true }).at(t + 300, 'expr', id, { name: 'sad', ms: 4000 });
+      s.at(t + 800, 'equip', id, { layer: 'cuffs' });
+      s.at(t + 2200, 'moveTo', id, { x: 0.55, lane: 0, speed: 'walk', anim: 'cuffedWalk' });
+      s.at(t + 4200, 'hide', id);                       // into the cop car
+    };
+    robbers.forEach((m, i) => {
       const t = T + i * 200;
       s.at(t, 'show', m.player);
       if (m.fate === 'paid') {
         s.at(t, 'equip', m.player, { layer: 'bag' }).at(t, 'expr', m.player, { name: 'excited', ms: 3000 });
-        s.at(t + 200, 'moveTo', m.player, { x: 0.92, lane: 0, speed: 'run' });
+        s.at(t + 200, 'moveTo', m.player, { x: 0.9, lane: 0, speed: 'run' });
       } else if (m.fate === 'escaped') {
         s.at(t, 'expr', m.player, { name: 'fear', ms: 3000 });
         s.at(t + 200, 'moveTo', m.player, { x: 0, lane: 0, speed: 'flee' });
-      } else {
-        s.at(t + 300, 'anim', m.player, { name: 'arrested', hold: true }).at(t + 300, 'expr', m.player, { name: 'sad', ms: 4000 });
-        s.at(t + 800, 'equip', m.player, { layer: 'cuffs' });
-        s.at(t + 2200, 'moveTo', m.player, { x: 0.55, lane: 0, speed: 'walk', anim: 'cuffedWalk' });
-        s.at(t + 4200, 'hide', m.player);                       // into the cop car
-      }
+      } else arrest(m.player, t);
     });
-    if (getaway) {
-      s.at(T + n * 200 + 1600, 'prop', null, { id: 'getaway', state: 'leave' });
-      for (const m of paid) s.at(T + n * 200 + 1500, 'hide', m.player);
-    }
-    const won = paid.reduce((sum, m) => sum + m.payout, 0);
+    const paid = robbers.filter((m) => m.fate === 'paid'), outT = T + r * 200 + 1500;
+    for (const m of paid) s.at(outT, 'hide', m.player);                     // into the car
+    if (driverM && driverM.fate === 'arrested') { s.at(T + 500, 'show', driver); arrest(driver, T + 500); }
+    const carLeaves = paid.length || (driverM && driverM.fate !== 'arrested');
+    if (carLeaves) s.at(paid.length ? outT + 100 : T + 400, 'prop', null, { id: 'getaway', state: 'leave' });   // the loot drives off / the driver bolts
+    const won = crew.filter((m) => m.fate === 'paid').reduce((sum, m) => sum + m.payout, 0);
     if (won > 0) s.coinRain(T + 400, won, 0.72, 0.5);
-    if (outcome.band === 'clean') s.at(T + 600, 'fx', null, { name: 'confetti', x: 0.72, y: 0.2 });
-    const end = T + n * 200 + SHOW.outroMs;
+    // 5. the result scene
+    const R = T + r * 200 + 2000;
+    scene(R, `result:${band}`);
+    s.at(R, 'fx', null, { name: 'banner', x: 0.5, y: 0.18, text: { clean: 'CLEAN GETAWAY!', messy: 'MESSY... BUT RICH!', escaped: 'HEIST FAILED - RUN!', busted: 'BUSTED!' }[band] });
+    if (band === 'clean') s.at(R + 200, 'fx', null, { name: 'confetti', x: 0.72, y: 0.2 });
+    crowdReact(s, R + 100, band === 'clean' ? 'big' : band === 'messy' ? 'win' : 'lose');
+    const end = T + n * 200 + S.outroMs;
     if (copsCome) s.at(end - 2500, 'prop', null, { id: 'cop1', state: 'leave' });
-    if (outcome.band === 'busted') s.at(end - 2400, 'prop', null, { id: 'cop2', state: 'leave' });
-    for (const m of outcome.members) s.at(end - 1500, 'unequip', m.player, { layer: m.fate === 'paid' ? 'bag' : 'cuffs' });
-    for (const m of outcome.members) s.at(end - 1200, 'show', m.player);
+    if (band === 'busted') s.at(end - 2400, 'prop', null, { id: 'cop2', state: 'leave' });
+    // the jail result: whoever got arrested sits it out in an orange jumpsuit (art costume) until the show ends
+    for (const m of crew) if (m.fate === 'arrested') s.at(R, 'equip', m.player, { layer: 'costume', costume: 'jumpsuit' });
+    for (const m of crew) {
+      if (m.fate === 'arrested') s.at(end - 1500, 'unequip', m.player, { layer: 'costume' });
+      s.at(end - 1500, 'unequip', m.player, { layer: m.fate === 'paid' ? 'bag' : 'cuffs' });
+      if (m.player !== driver) s.at(end - 1500, 'unequip', m.player, { layer: 'mask' });
+    }
+    for (const m of crew) s.at(end - 1200, 'show', m.player);
     s.at(end - 1200, 'prop', null, { id: 'bank', state: 'idle' });
-    return s.build(end);
+    // v1.18: the outcome in a form the overlay's cinematic reads (each person's take on the result scene)
+    const out = s.build(end);
+    out.info = { band: outcome.band, members: outcome.members.map((m) => ({ player: m.player, role: m.role, fate: m.fate, payout: m.payout, stake: m.stake })) };
+    return out;
   },
 
   settle(input, outcome, gameId) {

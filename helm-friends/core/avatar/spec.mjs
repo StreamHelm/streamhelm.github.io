@@ -6,7 +6,9 @@ import { check, CHARACTER_SPEC } from '../schema.mjs';
 import { itemById, isUnlocked, fitsSpecies, itemsBySlot } from './catalog.mjs';
 import { VEHICLE_KINDS, VEHICLE_PARTS, VEHICLE_OPTIONAL, VEHICLE_DEFAULTS, VEHICLE_COLORS, defaultVehicles, skyVehicles, pepebotVehicles, vehicleItems } from './vehicles.mjs';
 
-export const SPECIES = Object.freeze(['human', 'dragon', 'ape', 'cat', 'dog', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown']);
+export const SPECIES = Object.freeze(['human', 'dragon', 'ape', 'cat', 'dog', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown', 'werewolf', 'skeleton', 'zombie']);
+/** The species list before v1.18: randomStarterSpec keeps picking from it so every seeded starter stays the same. */
+const PRE_V118_SPECIES = SPECIES.slice(0, 16);
 export const RESERVED_SPECIES = Object.freeze(['mecha']);
 export const MODELS = Object.freeze([1, 2]);
 export const BODIES = Object.freeze(['slim', 'average', 'broad']);
@@ -15,9 +17,9 @@ export const WEAR_SLOTS = Object.freeze(['hat', 'eyewear', 'ear', 'nose', 'shirt
 /** Species that pick a breed (and ears) instead of a skin colour. */
 export const BREED_SPECIES = Object.freeze(['cat', 'dog']);
 /** v1.16: species with coats (spec.breed). Cats and dogs: breeds; the rest: `breed.<sp>.natural` + patterns / colour morphs. */
-export const COAT_SPECIES = Object.freeze(['cat', 'dog', 'dragon', 'ape', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur']);
+export const COAT_SPECIES = Object.freeze(['cat', 'dog', 'dragon', 'ape', 'frog', 'capybara', 'panda', 'alien', 'rat', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'werewolf', 'skeleton', 'zombie']);
 /** Species with an ears option (cat/dog ears, alien antennae, axolotl gills; v1.16: human face shapes, rat/panda ears, extras). v1.10 */
-export const EAR_SPECIES = Object.freeze(['cat', 'dog', 'alien', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown', 'human', 'rat', 'panda', 'capybara', 'frog', 'ape']);
+export const EAR_SPECIES = Object.freeze(['cat', 'dog', 'alien', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown', 'human', 'rat', 'panda', 'capybara', 'frog', 'ape', 'werewolf', 'skeleton', 'zombie']);
 export const WING_SPECIES = Object.freeze(['dragon', 'bat']);
 /** The ear species before v1.16 (randomStarterSpec keeps its old random sequence). */
 const PRE_V116_EARS = ['cat', 'dog', 'alien', 'axolotl', 'beardie', 'bat', 'orc', 'minotaur', 'clown'];
@@ -37,6 +39,7 @@ export const SPECIES_SKIN = Object.freeze({
   dog: { h: 30, s: 50, v: 70 }, frog: { h: 105, s: 65, v: 70 }, capybara: { h: 25, s: 55, v: 55 }, panda: { h: 0, s: 0, v: 95 },
   alien: { h: 150, s: 45, v: 80 }, rat: { h: 25, s: 18, v: 62 }, axolotl: { h: 335, s: 32, v: 98 },
   beardie: { h: 36, s: 55, v: 80 }, bat: { h: 265, s: 22, v: 38 }, orc: { h: 95, s: 42, v: 58 }, minotaur: { h: 22, s: 55, v: 45 }, clown: { h: 28, s: 30, v: 92 },
+  werewolf: { h: 28, s: 35, v: 46 }, skeleton: { h: 45, s: 10, v: 94 }, zombie: { h: 95, s: 28, v: 62 },
   mecha: { h: 40, s: 85, v: 95 },
 });
 
@@ -47,9 +50,21 @@ const DEFAULT_BREED = Object.fromEntries(COAT_SPECIES.map((sp) => [sp, `breed.${
 DEFAULT_BREED.cat = 'breed.cat.tabby'; DEFAULT_BREED.dog = 'breed.dog.lab';
 const DEFAULT_EARS = { cat: 'ears.cat.pointy', dog: 'ears.dog.floppy', alien: 'ears.alien.twin', axolotl: 'ears.axolotl.frills',
   beardie: 'ears.beardie.frill', bat: 'ears.bat.tall', orc: 'ears.orc.tusks', minotaur: 'ears.minotaur.curved', clown: 'ears.clown.classic',
-  human: 'ears.human.oval', rat: 'ears.rat.round', panda: 'ears.panda.round', capybara: 'ears.capybara.plain', frog: 'ears.frog.plain', ape: 'ears.ape.plain' };
+  human: 'ears.human.oval', rat: 'ears.rat.round', panda: 'ears.panda.round', capybara: 'ears.capybara.plain', frog: 'ears.frog.plain', ape: 'ears.ape.plain',
+  werewolf: 'ears.werewolf.pointy', skeleton: 'ears.skeleton.plain', zombie: 'ears.zombie.plain' };
 /** Species that start bald (their look is the head itself). Any hair can still be picked. */
-const BALD_SPECIES = ['alien', 'rat', 'axolotl', 'beardie', 'bat', 'minotaur'];
+// v1.21 QA (Sky): animals start without human hair (it read as a brown bowl on cats, dogs, frogs, dragons…); any hair can still be picked
+const BALD_SPECIES = ['alien', 'rat', 'axolotl', 'beardie', 'bat', 'minotaur', 'werewolf', 'skeleton', 'dragon', 'ape', 'cat', 'dog', 'frog', 'capybara', 'panda'];
+/** v1.18: boxing gloves worn in fights (spec.gloves) and the name tag (spec.tag) when a spec has none. */
+export const DEFAULT_GLOVES = Object.freeze({ item: 'gloves.classic', colors: [{ h: 356, s: 78, v: 84 }, { h: 0, s: 0, v: 96 }] });
+/** v1.22: the cosmetic extras slots (spec.extras); every one optional (null = nothing). */
+export const EXTRA_SLOTS = Object.freeze(['neck', 'back', 'held', 'aura']);
+const EXTRA_COLORS = { neck: [{ h: 215, s: 6, v: 88 }, { h: 46, s: 80, v: 96 }], back: [{ h: 356, s: 70, v: 70 }, { h: 250, s: 14, v: 20 }], held: [{ h: 330, s: 70, v: 95 }, { h: 0, s: 0, v: 96 }], aura: [{ h: 190, s: 60, v: 96 }] };
+const noExtras = () => Object.fromEntries(EXTRA_SLOTS.map((s) => [s, null]));
+export const DEFAULT_TAG = Object.freeze({ shape: 'tag.rounded', colors: [{ h: 270, s: 45, v: 18 }], name: 'nameColor.white', font: 'font.clean' });
+const TAG_BOX_COLORS = [{ h: 270, s: 45, v: 18 }];
+const copyGloves = (g) => ({ item: g.item, colors: g.colors.map((c) => ({ ...c })) });
+const copyTag = (t) => ({ shape: t.shape, colors: t.colors.map((c) => ({ ...c })), name: t.name, font: t.font });
 /** Default colours of a recolourable pet (cosmic kitten: fur + antenna glow). */
 const PET_COLORS = [{ h: 195, s: 45, v: 75 }, { h: 110, s: 90, v: 95 }];
 const HAIR_FX = { prism: 'hairfx.prism', neon: 'hairfx.neon', stardust: 'hairfx.stardust' };
@@ -87,11 +102,14 @@ export function defaultSpec(species = 'human') {
     wings: WING_SPECIES.includes(species) ? { style: 'wings.bat', color: { h: 150, s: 50, v: 45 } } : null,
     eyes: { shape: 'eyes.round', color: { ...EYE_PRESETS[0].hsv } },
     brows: 'brows.1',
-    hair: { style: BALD_SPECIES.includes(species) ? 'hair.bald' : species === 'clown' ? 'hair.clown_tufts' : 'hair.short', color: species === 'clown' ? { h: 15, s: 85, v: 85 } : { h: 25, s: 60, v: 30 }, fx: null },
+    hair: { style: BALD_SPECIES.includes(species) ? 'hair.bald' : species === 'clown' ? 'hair.clown_tufts' : species === 'zombie' ? 'hair.messy' : species === 'orc' ? 'hair.buzz' : 'hair.short', color: species === 'clown' ? { h: 15, s: 85, v: 85 } : { h: 25, s: 60, v: 30 }, fx: null },
     facialHair: { style: null, color: { h: 25, s: 60, v: 30 } },
     wear: Object.fromEntries(WEAR_SLOTS.map((s) => [s, WEAR_DEFAULTS[s] ? { item: WEAR_DEFAULTS[s], colors: DEFAULT_COLORS.slice(0, 2) } : null])),
     vehicles: defaultVehicles(),
     pet: null,
+    gloves: copyGloves(DEFAULT_GLOVES),
+    extras: noExtras(),
+    tag: copyTag(DEFAULT_TAG),
     unique: null,
   };
 }
@@ -196,6 +214,11 @@ export function normalizeSpec(input, catalog, owned, flags = {}) {
   for (const slot of WEAR_SLOTS) out.wear[slot] = worn(slot, wear[slot]);
   out.vehicles = vehicles(src.vehicles);
   out.pet = pet(src.pet);
+  out.gloves = gloves(src.gloves);
+  out.extras = extras(src.extras);
+  out.tag = tag(src.tag);
+  // SH Gods BRIDGE: the viewer's god - optional (absent = none; a well-formed id is kept, the list of gods is the streamer's config)
+  if (src.faith != null) { if (typeof src.faith === 'string' && /^[a-z][a-z0-9_]{0,15}$/.test(src.faith)) out.faith = src.faith; else note('faith', src.faith, null, 'CLAMP'); }
   out.unique = flags.unique || null;
   if (src.unique != null && src.unique !== out.unique) note('unique', src.unique, out.unique, 'RESERVED');
   return { spec: out, changes };
@@ -220,6 +243,53 @@ export function normalizeSpec(input, catalog, owned, flags = {}) {
       }
     }
     return res;
+  }
+  /** spec.extras (v1.22): { neck, back, held, aura } each Worn|null. Missing = none, silently (older clients). */
+  function extras(x) {
+    if (x == null) return noExtras();
+    if (typeof x !== 'object' || Array.isArray(x)) return note('extras', x, noExtras(), 'CLAMP');
+    const o = {};
+    for (const slot of EXTRA_SLOTS) {
+      const w = x[slot];
+      if (w == null) { o[slot] = null; continue; }
+      const id = part('extras.' + slot, typeof w === 'object' ? w.item ?? null : null, slot, null);
+      if (!id) { o[slot] = null; continue; }
+      const it = itemById(catalog, id), given = Array.isArray(w.colors) ? w.colors : [];
+      let colors = [];
+      if (!it.lockedColors) {
+        colors = Array.from({ length: it.channels }, (_, i) => clampHsv(given[i], EXTRA_COLORS[slot][i] || DEFAULT_COLORS[i]));
+        if (id === w.item && !(given.length === colors.length && colors.every((c, i) => sameHsv(c, given[i])))) note('extras.' + slot + '.colors', given, colors, 'CLAMP');
+      } else if (given.length) note('extras.' + slot + '.colors', given, [], 'LOCKED_COLORS');
+      o[slot] = { item: id, colors };
+    }
+    return o;
+  }
+  /** spec.gloves (v1.18): the boxing gloves worn in fights. Missing / null = the classic red pair, silently (older clients). */
+  function gloves(w) {
+    if (w == null) return copyGloves(DEFAULT_GLOVES);
+    if (typeof w !== 'object' || Array.isArray(w)) return note('gloves', w, copyGloves(DEFAULT_GLOVES), 'CLAMP');
+    const id = part('gloves', w.item ?? null, 'gloves', DEFAULT_GLOVES.item);
+    if (id !== w.item) return copyGloves(DEFAULT_GLOVES);
+    const it = itemById(catalog, id), given = Array.isArray(w.colors) ? w.colors : [];
+    let colors = [];
+    if (!it.lockedColors) {
+      colors = Array.from({ length: it.channels }, (_, i) => clampHsv(given[i], DEFAULT_GLOVES.colors[i] || DEFAULT_COLORS[i]));
+      if (!(given.length === colors.length && colors.every((c, i) => sameHsv(c, given[i])))) note('gloves.colors', given, colors, 'CLAMP');
+    } else if (given.length) note('gloves.colors', given, [], 'LOCKED_COLORS');
+    return { item: id, colors };
+  }
+  /** spec.tag (v1.18): name tag box shape (+ box colour), name colour, font. Missing = the default tag, silently. */
+  function tag(t) {
+    if (t == null) return copyTag(DEFAULT_TAG);
+    if (typeof t !== 'object' || Array.isArray(t)) return note('tag', t, copyTag(DEFAULT_TAG), 'CLAMP');
+    const shape = part('tag.shape', t.shape ?? null, 'tag', DEFAULT_TAG.shape);
+    const it = itemById(catalog, shape), given = Array.isArray(t.colors) ? t.colors : [];
+    let colors = [];
+    if (!it.lockedColors) {
+      colors = Array.from({ length: it.channels }, (_, i) => clampHsv(given[i], TAG_BOX_COLORS[i] || DEFAULT_COLORS[i]));
+      if (shape === t.shape && !(given.length === colors.length && colors.every((c, i) => sameHsv(c, given[i])))) note('tag.colors', given, colors, 'CLAMP');
+    } else if (given.length && shape === t.shape) note('tag.colors', given, [], 'LOCKED_COLORS');
+    return { shape, colors, name: part('tag.name', t.name ?? null, 'nameColor', DEFAULT_TAG.name), font: part('tag.font', t.font ?? null, 'font', DEFAULT_TAG.font) };
   }
   /** spec.pet (v1.11): null = no pet (also when missing); { item, colors, name? } */
   function pet(w) {
@@ -287,6 +357,9 @@ export function itemsInSpec(spec) {
   for (const s of WEAR_SLOTS) if (spec.wear && spec.wear[s]) ids.push(spec.wear[s].item);
   ids.push(...vehicleItems(spec));
   if (spec.pet && spec.pet.item) ids.push(spec.pet.item);
+  if (spec.gloves && spec.gloves.item) ids.push(spec.gloves.item);
+  if (spec.extras) for (const s of EXTRA_SLOTS) if (spec.extras[s] && spec.extras[s].item) ids.push(spec.extras[s].item);
+  if (spec.tag) ids.push(spec.tag.shape, spec.tag.name, spec.tag.font);
   return ids.filter(Boolean);
 }
 
@@ -308,6 +381,7 @@ export function uniqueSpec(which) {
       pants: { item: 'pants.black_jeans', colors: [] }, shoes: { item: 'shoes.black_boots', colors: [] },
     };
     s.vehicles = skyVehicles();
+    s.gloves = { item: 'gloves.classic', colors: [{ h: 250, s: 20, v: 14 }, { h: 102, s: 90, v: 96 }] };   // v1.18: black with neon-green cuffs
     return s;
   }
   if (which === 'pepebot') {
@@ -317,6 +391,7 @@ export function uniqueSpec(which) {
     s.hair = { style: 'hair.bald', color: { h: 280, s: 70, v: 70 }, fx: null };   // the purple spikes are part of the mecha body art
     s.wear = Object.fromEntries(WEAR_SLOTS.map((k) => [k, null]));
     s.vehicles = pepebotVehicles();
+    s.gloves = { item: 'gloves.mecha', colors: [] };   // v1.18: his mecha fists (tag kit:pepebot)
     return s;
   }
   throw new Error('unknown unique ' + which);
@@ -330,7 +405,7 @@ export function uniqueSpec(which) {
 export function randomStarterSpec(rng, catalog) {
   const by = itemsBySlot(catalog);
   const starters = (slot, species) => (by[slot] || []).filter((it) => it.rarity === 'starter' && fitsSpecies(it, species)).map((it) => it.id);
-  const species = rng.pick(SPECIES);
+  const species = rng.pick(PRE_V118_SPECIES);
   const s = defaultSpec(species);
   s.model = rng.pick(MODELS); s.body = rng.pick(BODIES); s.height = rng.pick(HEIGHTS);
   s.skin = species === 'human' ? skinTone(rng.int(0, 100)) : s.skin;

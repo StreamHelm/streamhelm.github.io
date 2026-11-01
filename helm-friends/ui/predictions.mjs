@@ -1,6 +1,6 @@
 // The live prediction strip (DESIGN §6.1): one bar per option. A bar's length is its share of points + Dollahs
-// (core bars()); inside it the outcome colour is the channel-point part and silver the Dollah part. Under each bar:
-// "12,400 pts (31 people) · 3,250 Dollahs (9 people)" (core barCaption()). Viewers can bet Dollahs here.
+// (core bars()); inside it the outcome colour is the channel-point part and silver the Pepe's Silvia Dollahs part. Under each
+// bar: "12,400 Bullet Bills (31 people) · 3,250 Pepe's Silvia Dollahs (9 people)" (core barCaption()). Viewers can bet here.
 
 import { bars as barsOf, barCaption, fmt, fmtWait, PSD, psd } from '../core/index.mjs';
 import { h, mount } from './h.mjs';
@@ -34,7 +34,7 @@ export function createPredictions({ store, api, actions, compact = false, now = 
     const body = [
       h('p', { class: 'pred-status' }, statusText),
       p.twitchStatus === 'canceled' && p.status !== 'canceled' ? h('p', { class: 'note warn' }, `Channel points were refunded by Twitch — the ${PSD} side is still running.`) : null,
-      h('div', { class: 'legend', 'aria-hidden': 'true' }, h('span', null, h('i', { class: 'l-cp' }), 'channel points'), h('span', null, h('i', { class: 'l-d' }), PSD)),
+      h('div', { class: 'legend', 'aria-hidden': 'true' }, h('span', null, h('i', { class: 'l-cp' }), st.pointsName || 'channel points'), h('span', null, h('i', { class: 'l-d' }), PSD)),
       p.outcomes.map((o, i) => bar(o, i, view.find((b) => b.outcome === o.id) || { pct: 0, cpPct: 100, dPct: 0, points: 0, dollahs: 0, pointUsers: 0, bettors: 0 }, p, pointsName)),
       open ? betForm(p, st, mine) : null,
     ];

@@ -13,6 +13,7 @@ import { CORE_ROLES, ROLE_INFO, SINGLE_ROLES, heistOdds, lockCrew } from './game
 import { EVENT_NAMES, stageKindOf } from './cooldown.mjs';
 import { scriptBuilder, clip } from './script.mjs';
 import { spread } from './games/common.mjs';
+import { potatoTheory, potatoSeats } from './games/potato.mjs';
 import { fmt } from './format.mjs';
 
 const MAX_SHOW = 180000;
@@ -39,17 +40,27 @@ export function lobbyView(rec, o = {}) {
     const roles = [...CORE_ROLES, 'muscle'].map((role) => {
       const people = crew.filter((m) => m.role === role).map((m) => nm(m.player));
       const single = SINGLE_ROLES.includes(role);
-      return { role, name: ROLE_INFO[role].name, cmd: `${tr('heist')} <amount> ${role}`, single, people, open: !single || !people.length, what: ROLE_INFO[role].what };
+      // launch audit: `wanting` = people who asked for this single seat but don't hold it (the seeded draw at lock time decides)
+      const wanting = single ? crew.filter((m) => m.wants === role && m.role !== role).map((m) => nm(m.player)) : [];
+      return { role, name: ROLE_INFO[role].name, cmd: `${tr('heist')} <amount> ${role}`, single, people, open: !single || !people.length, what: ROLE_INFO[role].what, ...(wanting.length ? { wanting } : {}) };
     });
     const chance = crew.length ? Math.round(heistOdds(lockCrew(crew).crew).p * 100) : 0;
     return { ...base, count: crew.length, min: h.minCrew, max: h.maxCrew, fee: 0, bet: { syntax: `${tr('heist')} <amount> [role]`, min: h.minStake, max: h.maxStake },
       join: [{ cmd: `${tr('heist')} ${Math.max(h.minStake, 100)} hacker`, what: `Join with a bet of ${fmt(h.minStake)}–${fmt(h.maxStake)} and a role (or none: you get an open one)` }],
-      roles, chance, people: crew.map((m) => nm(m.player)) };
+      roles, chance, people: crew.map((m) => nm(m.player)), crewRoles: crew.map((m) => m.role) };   // v1.18: crewRoles (same order as people)
   }
   if (rec.game === 'royale') {
     const r = cfg.royale, ps = input.players || [];
     return { ...base, count: ps.length, min: r.minPlayers, max: r.maxPlayers, fee: 0, bet: null,
       join: [{ cmd: tr('join'), what: 'Jump in - it is free. Last one standing wins Pepe\'s Silvia Dollahs.' }], people: ps.map(nm) };
+  }
+  if (rec.game === 'potato') {   // v1.18: Sayok's Hot Potato
+    const c = cfg.potato || DEFAULT_ECONOMY.potato, ps = input.players || [], fee = input.entry || 0;
+    const th = potatoTheory(Math.max(c.minPlayers, ps.length), fee, cfg);
+    return { ...base, count: ps.length, min: c.minPlayers, max: c.maxPlayers, fee, bet: null,
+      join: [{ cmd: tr('join'), what: fee ? `Entry ${fmt(fee)} Pepe's Silvia Dollahs. Don't be holding Sayok's bomb when it blows - survivors split the pot + a bank bonus.` : "Free! Don't be holding Sayok's bomb when it blows - survivors share a bank bonus." },
+        { cmd: `${tr('pass')} @name`, what: 'When the game runs: toss the bomb to someone (or just ' + tr('pass') + ' for a random player)' }],
+      blasts: th.blasts, bonus: th.bonus, people: ps.map(nm) };
   }
   if (rec.game === 'race' && input.mode === 'gp') {
     const gp = (cfg.race || DEFAULT_ECONOMY.race).gp, rs = input.racers || [], fee = input.fee || 0;
@@ -76,10 +87,22 @@ export function lobbyScript(view, { now, rev, members }) {
       slots: view.roles.map((r) => ({ role: r.role, name: r.name, people: r.people.slice(0, 12), ...(r.single ? { single: true } : {}) })) } });
     const xs = spread(n, 0.12, 0.36);
     members.forEach((id, i) => { s.at(0, 'moveTo', id, { x: xs[i], lane: i % 2 ? 1 : 0, speed: 'walk' }); s.at(Math.min(2600, dur - 1), 'face', id, { dir: 'back' }); });
+    // v1.18 (overlay planning room + JOIN THE HEIST panel): who holds which role, and how to join (Sky's triggers)
+    const out = s.build(dur);
+    out.group = 'lobby:' + view.id;
+    out.info = {
+      roles: Object.fromEntries(members.map((id, i) => [id, (view.crewRoles && view.crewRoles[i]) || 'muscle'])),
+      how: [{ cmd: clip(view.bet ? view.bet.syntax : '!heist <amount> [role]', 60), what: clip(`e.g. ${view.join[0].cmd} · bet ${fmt(view.bet ? view.bet.min : 50)}–${fmt(view.bet ? view.bet.max : 1000)} · no role = an open one`, 80) }],
+    };
+    return out;
   } else if (view.game === 'royale') {
     s.prop('ring', 'ring', 0.5, 1, 'idle');
     const xs = spread(n, 0.36, 0.64);
     members.forEach((id, i) => s.at(0, 'moveTo', id, { x: xs[i], lane: i % 3, speed: 'walk' }));
+  } else if (view.game === 'potato') {   // v1.18: the players line up where they'll stand; the unlit bomb sits in the middle
+    const seats = potatoSeats(Math.max(1, n));
+    s.prop('bomb', 'potatoBomb', 0.5, 1, 'idle', { potato: { seats } });
+    members.forEach((id, i) => { s.at(0, 'moveTo', id, { x: seats[i].x, lane: seats[i].lane, speed: 'walk' }); s.at(Math.min(2400, dur - 1), 'face', id, { dir: 'front' }); });
   } else {
     const xs = spread(n, 0.06, 0.3);
     members.forEach((id, i) => s.at(0, 'moveTo', id, { x: xs[i], lane: i % 3, speed: 'walk' }));

@@ -96,6 +96,9 @@ export function createApi({ base, auth = null, fetchFn = (...a) => fetch(...a), 
     checkin: (idem = newIdem()) => call('POST', '/me/checkin', { idem }),
     lobbies: () => call('GET', '/lobbies', undefined, { authed: false }),
     joinGame: (id, body = {}, idem = newIdem()) => call('POST', `/games/${encodeURIComponent(id)}/join`, { ...body, idem }),
+    // launch audit: switch role / leave an open role lobby
+    lobbyRole: (id, role, idem = newIdem()) => call('POST', `/games/${encodeURIComponent(id)}/role`, { role, idem }),
+    lobbyLeave: (id, idem = newIdem()) => call('POST', `/games/${encodeURIComponent(id)}/leave`, { idem }),
     // v1.14: challenges (fight / arm wrestle / Gleep Race) from the app; they run the same rules as the chat commands
     people: () => call('GET', '/stage/people'),
     challenges: () => call('GET', '/me/challenges'),

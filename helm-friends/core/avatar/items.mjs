@@ -25,7 +25,11 @@ const feats = (sp, list) => list.map(([k, n, r]) => [sp + '.' + k, n, r, { speci
 
 /** Default colour channels per slot (0 = colour comes from the spec, e.g. hair colour). */
 const SLOT_CHANNELS = { hat: 2, eyewear: 1, ear: 1, nose: 1, shirt: 2, pants: 2, shoes: 2, hair: 0, hairfx: 0, facialHair: 0,
-  brows: 0, eyes: 0, species: 0, breed: 0, ears: 0, wings: 1, pet: 1 };
+  brows: 0, eyes: 0, species: 0, breed: 0, ears: 0, wings: 1, pet: 1,
+  // v1.18 (art batch 2): boxing gloves (leather + cuff), name-tag box shapes (box colour), name colours and fonts (none)
+  gloves: 2, tag: 1, nameColor: 0, font: 0,
+  // v1.22 cosmetic extras (spec.extras): necklaces, back items, held items, auras
+  neck: 1, back: 2, held: 1, aura: 1 };
 
 /** @type {Object<string, [string, string, string, Object?][]>} slot → rows */
 export const ITEM_ROWS = {
@@ -34,6 +38,8 @@ export const ITEM_ROWS = {
     ['frog', 'Frog', S], ['capybara', 'Capybara', S], ['panda', 'Panda', S],
     ['alien', 'Gleep alien', S], ['rat', 'Rat', S], ['axolotl', 'Axolotl', S],
     ['beardie', 'Bearded dragon', S], ['bat', 'Bat', S], ['orc', 'Orc', S], ['minotaur', 'Minotaur', S], ['clown', 'Clown', S],
+    // v1.18 (art batch 2, permanent)
+    ['werewolf', 'Werewolf', S], ['skeleton', 'Skeleton', S], ['zombie', 'Zombie', S],
     ['mecha', 'Mecha Dragon (PepeBot)', X, { for: 'pepebot', locked: true, fx: 'pulse' }],
   ],
   eyes: [
@@ -141,7 +147,7 @@ export const ITEM_ROWS = {
     ['synthwave', 'Synthwave jacket', L, { frames: [8, 6] }], ['glitter', 'Glitter top', E, { ch: 1, fx: 'glitter' }],
     ['tuxedo', 'Tuxedo', R], ['spacesuit', 'Space suit', E], ['labcoat', 'Lab coat', C], ['hazmat', 'Hazmat suit', C],
     ['cosmic_robe', 'Cosmic robe', L, { fx: 'prism' }],
-    ['sky_outfit', "Sky's black host jacket", X, { for: 'sky', locked: true, frames: [8, 8], tags: STREAM }],
+    ['sky_outfit', "Sky's black host jacket", X, { for: 'sky', locked: true, tags: STREAM }],   // v1.18: no glint frames (Sky: no rippling)
     // round 2 (v1.10)
     ['hawaiian', 'Hawaiian shirt', S], ['bomber', 'Bomber jacket', S], ['turtleneck', 'Turtleneck', S], ['varsity', 'Varsity jacket', C],
     ['ufo_tee', 'UFO tee', C, { locked: true, tags: ['gleep', 'stream'] }],
@@ -149,7 +155,7 @@ export const ITEM_ROWS = {
     ['trinity', 'Cosmic Trinity tee', E, { locked: true, tags: GODS }],
     ['dollah', "Pepe's Silvia Dollah tee", E, { locked: true, fx: 'glitter', tags: STREAM }],
     // v1.11: Sky's own wardrobe (based on his real clothes) + the retro-synth glow jacket
-    ['sky_flannel', "Sky's buffalo-plaid flannel", X, SKY], ['sky_camo', "Sky's purple camo tee", X, SKY],
+    ['sky_flannel', "Sky's buffalo-plaid flannel", X, SKY], ['sky_camo', "Sky's purple camo sweater", X, SKY],
     ['sky_colorblock', "Sky's colour-block tee", X, SKY], ['sky_overshirt', "Sky's black overshirt", X, SKY],
     ['sky_football', "Sky's black & gold football jersey", X, SKY], ['sky_hockey', "Sky's black & gold hockey jersey", X, SKY],
     ['sky_synth', "Sky's retro-synth glow jacket", X, { ...SKY, frames: [10, 8] }],
@@ -216,6 +222,55 @@ export const ITEM_ROWS = {
     ['kitten.glip', 'Glip (Glorp\'s kitten)', R, { locked: true, fx: 'glow', tags: GODS }], ['kitten.krub', 'Krub (Klerb\'s kitten)', R, { locked: true, tags: GODS }],
     ['kitten.sayno', 'Sayno (Sayok\'s kitten)', E, { locked: true, fx: 'pulse', tags: GODS }], ['drone.pepebot', 'Mini PepeBot drone', L, { locked: true, fx: 'glow', tags: STREAM }],
   ],
+  // v1.18: boxing gloves (spec.gloves), worn automatically in fights; recolourable basics + unlockables
+  gloves: [
+    ['classic', 'Classic boxing gloves', S], ['laceup', 'Lace-up pro gloves', S], ['mitts', 'Puffy sparring mitts', S],
+    ['spiked', 'Spiked gloves', R], ['neon', 'Neon-trim gloves', R, { fx: 'glow' }],
+    ['champion', 'Gold champion gloves', E, { locked: true, fx: 'glitter' }],
+    ['glorp', 'Glorp glow gloves', E, { locked: true, fx: 'glow', tags: GODS }], ['klerb', 'Klerb chaos-star gloves', E, { locked: true, tags: GODS }],
+    ['sayok', 'Sayok flame gloves', L, { locked: true, fx: 'pulse', tags: GODS }],
+    ['dollah', "Pepe's Silvia Dollah gloves", L, { locked: true, fx: 'glitter', tags: STREAM }],
+    ['mecha', 'PepeBot mecha fists', L, { locked: true, fx: 'glow', tags: ['stream', 'kit:pepebot'] }],
+  ],
+  // v1.18: name tags (spec.tag): the text-box shape (plain shapes: box colour = channel 1), the name colour, the font.
+  // Drawn by the overlay / web from art.json nameTags + fonts (CONTRACTS v1.18).
+  tag: [
+    ['rounded', 'Rounded box', S], ['pill', 'Pill', S], ['square', 'Square box', S], ['bubble', 'Speech bubble', S],
+    ['banner', 'Ribbon banner', C], ['pixel', 'Pixel frame', C], ['neon', 'Neon sign', R, { fx: 'glow' }],
+    ['glorp_leaf', 'Glorp leaf frame', E, { locked: true, tags: GODS }], ['chaos_star', 'Klerb chaos-star frame', E, { locked: true, tags: GODS }],
+    ['flame', 'Sayok flame frame', E, { locked: true, fx: 'pulse', tags: GODS }],
+    ['dollah', "Pepe's Silvia Dollah coin frame", L, { locked: true, fx: 'glitter', tags: STREAM }],
+  ],
+  nameColor: [
+    ['white', 'White name', S], ['yellow', 'Yellow name', S], ['green', 'Green name', S], ['cyan', 'Cyan name', S], ['blue', 'Blue name', S],
+    ['purple', 'Purple name', S], ['pink', 'Pink name', S], ['red', 'Red name', S], ['orange', 'Orange name', S], ['grey', 'Grey name', S],
+    ['neon', 'Neon glow name', R, { fx: 'glow' }], ['gradient', 'Sunset gradient name', R], ['glitter', 'Glitter name', E, { fx: 'glitter' }],
+    ['rainbow', 'Rainbow name', E, { fx: 'prism' }], ['gold', 'Gold shimmer name', L, { fx: 'glow' }],
+  ],
+  font: [['clean', 'Clean pixel font', S], ['bold', 'Bold pixel font', S], ['tall', 'Tall pixel font', S], ['arcade', 'Arcade pixel font', S]],
+  // v1.22 cosmetic extras (spec.extras.neck / back / held / aura): about half free, half unlockable
+  neck: [
+    ['chain', 'Silver chain', S], ['beads', 'Bead necklace', S, { ch: 2 }], ['choker', 'Choker', C],
+    ['rope', 'Gold rope chain', R, { locked: true, fx: 'glitter' }],
+    ['glorp_leaf', 'Glorp leaf pendant', R, { locked: true, fx: 'glow', tags: GODS }], ['klerb_star', 'Klerb chaos-star pendant', R, { locked: true, tags: GODS }],
+    ['sayok_fang', 'Sayok fang necklace', E, { locked: true, tags: GODS }],
+    ['dollah', "Pepe's Silvia Dollah pendant", E, { locked: true, fx: 'glitter', tags: STREAM }],
+  ],
+  back: [
+    ['backpack', 'Backpack', S], ['cape', 'Cape', S], ['guitar', 'Guitar on the back', C],
+    ['jetpack', 'Jetpack', R, { locked: true, fx: 'pulse' }], ['helm_cape', "Helm captain's cape", E, { locked: true, tags: STREAM }],
+    ['sayok_cape', 'Sayok hellfire cape', L, { locked: true, fx: 'pulse', tags: GODS }],
+  ],
+  held: [
+    ['balloon', 'Balloon', S], ['mug', 'Coffee mug', S, { ch: 2 }], ['foam_finger', 'Foam finger', C],
+    ['juggling', 'Juggling balls', R, { locked: true, frames: [8, 4] }], ['glowstick', 'Glorp glow-stick', R, { locked: true, fx: 'glow', tags: GODS }],
+    ['dollah_fan', "Fan of Pepe's Silvia Dollahs", E, { locked: true, fx: 'glitter', tags: STREAM }],
+  ],
+  aura: [
+    ['soft', 'Soft glow aura', S], ['stars', 'Starry aura', C],
+    ['glorp', 'Glorp radiance', E, { locked: true, tags: GODS }], ['klerb', 'Klerb chaos swirl', E, { locked: true, tags: GODS }],
+    ['sayok', 'Sayok hellfire ring', L, { locked: true, tags: GODS }], ['dollah', "Pepe's Silvia Dollah orbit", L, { locked: true, tags: STREAM }],
+  ],
   // body options last (v1.16): the shop lists the catalog in order, so clothes come before the many coats / features
   breed: [
     ['cat.tabby', 'Tabby', S, { species: ['cat'] }], ['cat.orange', 'Orange', S, { species: ['cat'] }],
@@ -241,6 +296,10 @@ export const ITEM_ROWS = {
     ...coats('bat', [['natural', NATURAL, S, 1], ['fruit', 'Fruit bat', S], ['ghost', 'Ghost bat', R], ['vampire', 'Vampire bat', C]]),
     ...coats('orc', [['natural', NATURAL, S, 1], ['grey', 'Grey-skin', S], ['crimson', 'Crimson', C], ['warpaint', 'War paint', C, 1], ['scarred', 'Battle scars', R, 1]]),
     ...coats('minotaur', [['natural', NATURAL, S, 1], ['black', 'Black bull', S], ['white', 'White bull', C], ['highland', 'Highland ginger', C], ['holstein', 'Holstein patches', R]]),
+    // v1.18 (art batch 2): werewolf fur, skeleton bone tints, zombie skin / rot
+    ...coats('werewolf', [['natural', NATURAL, S, 1], ['grey', 'Timber grey', S], ['black', 'Black wolf', S], ['brown', 'Brown wolf', S], ['white', 'Arctic white', C], ['alpha', 'Alpha streak', C, 1], ['silvermoon', 'Silver moon', R], ['bloodmoon', 'Blood moon', E]]),
+    ...coats('skeleton', [['natural', 'Bone (your tint)', S, 1], ['aged', 'Aged bone', S], ['charred', 'Charred', C], ['ghost', 'Ghost glass', R], ['obsidian', 'Obsidian bones', R], ['gold', 'Golden bones', E]]),
+    ...coats('zombie', [['natural', 'Natural (your rot tone)', S, 1], ['stitched', 'Stitched together', S, 1], ['rotting', 'Rot patches', C, 1], ['fresh', 'Freshly risen', S], ['drowned', 'Drowned blue', C], ['toxic', 'Toxic green', R]]),
   ],
   ears: [
     ['cat.pointy', 'Pointy ears', S, { species: ['cat'] }], ['cat.round', 'Round ears', S, { species: ['cat'] }],
@@ -270,6 +329,10 @@ export const ITEM_ROWS = {
     ...feats('orc', [['broken', 'One broken tusk', C], ['ringed', 'Ringed tusks', R], ['sabre', 'Sabre tusks', E]]),
     ...feats('minotaur', [['ram', 'Ram horns', C], ['short', 'Short horns', S], ['ringed', 'Gold-ringed horns', E]]),
     ...feats('clown', [['sad', 'Sad hobo face paint', C], ['mime', 'Mime face paint', S], ['star', 'Star-eye face paint', C]]),
+    // v1.18: werewolf ears, skeleton / zombie extras ('plain' = the default, draws nothing)
+    ...feats('werewolf', [['pointy', 'Pointy wolf ears', S], ['tufted', 'Tufted ears', C], ['torn', 'Torn battle ear', R], ['mane', 'Wild neck mane', E]]),
+    ...feats('skeleton', [['plain', 'No extras', S], ['cracked', 'Cracked skull', C], ['horns', 'Little bone horns', R], ['eyeflames', 'Flaming eye sockets', E]]),
+    ...feats('zombie', [['plain', 'No extras', S], ['stitches', 'Forehead stitches', S], ['bolts', 'Neck bolts', C], ['brain', 'Exposed brain', R]]),
   ],
   wings: [
     ['bat', 'Bat wings', S, { species: ['dragon', 'bat'] }], ['feathered', 'Feathered wings', S, { species: ['dragon'] }],
@@ -282,7 +345,8 @@ export const ITEM_ROWS = {
 /** What each slot is called in the catalog id prefix. */
 export const ID_PREFIX = { species: 'species', breed: 'breed', ears: 'ears', wings: 'wings', eyes: 'eyes', brows: 'brows',
   hair: 'hair', hairfx: 'hairfx', facialHair: 'facialHair', hat: 'hat', eyewear: 'eyewear', ear: 'ear', nose: 'nose',
-  shirt: 'shirt', pants: 'pants', shoes: 'shoes', pet: 'pet' };
+  shirt: 'shirt', pants: 'pants', shoes: 'shoes', pet: 'pet', gloves: 'gloves', tag: 'tag', nameColor: 'nameColor', font: 'font',
+  neck: 'neck', back: 'back', held: 'held', aura: 'aura' };
 
 /**
  * One catalog item from a row (price filled in from the rarity table).

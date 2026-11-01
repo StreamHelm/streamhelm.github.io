@@ -9,6 +9,8 @@ import { reducedMotion } from './a11y.mjs';
 export const VIEW_DIRS = ['front', 'right', 'back', 'left'];
 const DIR_NAMES = { front: 'facing you', right: 'facing right', back: 'facing away', left: 'facing left' };
 export const PREVIEW_ANIMS = [['idle', 'Idle'], ['walk', 'Walk'], ['dance', 'Dance']];
+// While the boxing gloves are shown (the editor's Gloves tab) there's no Dance chip (the dance has no glove art)
+const GLOVE_ANIMS = [['idle', 'Idle'], ['walk', 'Walk'], ['guard', 'Fight stance']];
 
 /**
  * @param {{ art:Promise<import('./avatar-render.mjs').ArtPack|null>, catalog:()=>Object }} o
@@ -18,25 +20,33 @@ export function createPreview({ art, catalog }) {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const scratch = document.createElement('canvas');
-  let spec = null, dir = 'front', anim = 'idle', frames = [], token = 0, raf = 0, pack = null, status = 'loading';
+  let spec = null, dir = 'front', anim = 'idle', frames = [], token = 0, raf = 0, pack = null, status = 'loading', equips = [];
   const animated = { any: false };
 
-  art.then((p) => { pack = p; status = p ? 'ready' : 'missing'; if (p && p.frame) { canvas.width = p.frame.w; canvas.height = p.frame.h; ctx.imageSmoothingEnabled = false; } rebuild(); }, () => { status = 'missing'; rebuild(); });
+  art.then((p) => { pack = p; status = p ? 'ready' : 'missing'; if (p && p.frame) { canvas.width = p.frame.w; canvas.height = p.frame.h; ctx.imageSmoothingEnabled = false; } renderAnims(); rebuild(); }, () => { status = 'missing'; rebuild(); });
 
   const turn = (k) => { dir = VIEW_DIRS[(VIEW_DIRS.indexOf(dir) + k + 4) % 4]; rebuild(); announceDir(); };
   const dirLabel = h('span', { class: 'sr-only', 'aria-live': 'polite' });
   const announceDir = () => { dirLabel.textContent = 'Turned: ' + DIR_NAMES[dir]; };
-  const animBtns = PREVIEW_ANIMS.map(([id, label]) => h('button', {
-    type: 'button', class: 'chip', 'aria-pressed': String(id === anim), 'data-fk': 'anim-' + id,
-    onclick: () => { anim = id; for (const b of animBtns) b.setAttribute('aria-pressed', String(b.dataset.fk === 'anim-' + id)); rebuild(); },
-  }, label));
+  const animBox = h('div', { class: 'ed-anims', role: 'group', 'aria-label': 'Preview animation' });
+  // (the web app's art subset has no fight anims - assemble.js EDITOR_ANIMS - so the stance shows only when a pack has it)
+  const animList = () => (equips.includes('gloves') ? GLOVE_ANIMS.filter(([id]) => id !== 'guard' || (pack && pack.anim('guard'))) : PREVIEW_ANIMS);
+  function renderAnims() {
+    const list = animList();
+    if (!list.some(([id]) => id === anim)) anim = 'idle';
+    animBox.replaceChildren(...list.map(([id, label]) => h('button', {
+      type: 'button', class: 'chip', 'aria-pressed': String(id === anim), 'data-fk': 'anim-' + id,
+      onclick: () => { anim = id; for (const b of animBox.children) b.setAttribute('aria-pressed', String(b.dataset.fk === 'anim-' + id)); rebuild(); },
+    }, label)));
+  }
+  renderAnims();
 
   const el = h('div', { class: 'ed-stage' },
     h('div', { class: 'ed-preview-wrap' },
       h('button', { type: 'button', class: 'hf-iconbtn', 'aria-label': 'Turn character left', 'data-fk': 'turn-l', onclick: () => turn(-1) }, icon('left')),
       canvas,
       h('button', { type: 'button', class: 'hf-iconbtn', 'aria-label': 'Turn character right', 'data-fk': 'turn-r', onclick: () => turn(1) }, icon('right'))),
-    h('div', { class: 'ed-anims', role: 'group', 'aria-label': 'Preview animation' }, animBtns),
+    animBox,
     dirLabel);
 
   async function rebuild() {
@@ -50,7 +60,7 @@ export function createPreview({ art, catalog }) {
     animated.any = false;
     try {
       for (let f = 0; f < n; f++) {
-        const fr = await pack.compose(spec, catalog(), { anim, dir, frame: f, expr: 'neutral' }, 0);
+        const fr = await pack.compose(spec, catalog(), { anim, dir, frame: f, expr: 'neutral', equips }, 0);
         if (my !== token) return;
         out.push(fr);
         if (fr.animated) animated.any = true;
@@ -59,6 +69,7 @@ export function createPreview({ art, catalog }) {
     if (my !== token) return;
     frames = out;
     canvas.dataset.layers = String(out[0] ? out[0].layers : 0);
+    canvas.dataset.equips = equips.join(' ');
     canvas.dataset.built = String(my);   // data-drawn catches up once this build's first frame is on the canvas (tests wait for it)
     if (!out.length || !out[0].layers) { drawFallback(); return; }
     start(a.fps || 8);
@@ -79,7 +90,7 @@ export function createPreview({ art, catalog }) {
   async function draw(fr, t) {
     if (!fr) return;
     let img = fr;
-    if (fr.animated && pack && t) img = await pack.compose(spec, catalog(), { anim, dir, frame: frames.indexOf(fr), expr: 'neutral' }, t);
+    if (fr.animated && pack && t) img = await pack.compose(spec, catalog(), { anim, dir, frame: frames.indexOf(fr), expr: 'neutral', equips }, t);
     scratch.width = img.w; scratch.height = img.h;
     scratch.getContext('2d').putImageData(new ImageData(img.data, img.w, img.h), 0, 0);
     const W = canvas.width, H = canvas.height;   // the pack's frame (v1.10: 128×128)
@@ -112,8 +123,17 @@ export function createPreview({ art, catalog }) {
 
   return {
     el,
-    /** Shows a spec (call on every change). */
-    show(next) { spec = next; rebuild(); },
-    state: () => ({ dir, anim, status }),
+    /**
+     * Shows a spec (call on every change). `equips`: show-only gear drawn for this view only - the editor's Gloves tab
+     * passes ['gloves'] so you see your boxing gloves (on stream they only go on in fights). Never saved.
+     */
+    show(next, opts = {}) {
+      const eq = Array.isArray(opts.equips) ? opts.equips.slice() : [];
+      const changed = eq.join() !== equips.join();
+      equips = eq; spec = next;
+      if (changed) renderAnims();
+      rebuild();
+    },
+    state: () => ({ dir, anim, status, equips: equips.slice() }),
   };
 }

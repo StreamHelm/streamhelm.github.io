@@ -13,6 +13,7 @@
 // A manifest without `parts` (the plain CONTRACTS §11 form) is read as `${catalogId}|${variant}|${anim}|${dir}`.
 
 import { layerOrder, recolour, stretchRows, heightRows, itemById, itemsInSpec, bodyColors } from '../core/index.mjs';
+import { jerseyNumberOf, jerseyColorOf, jerseyBox, drawJerseyNumber, rowsAbove } from '../core/avatar/decals.mjs';
 
 const HAIR_FX = { neon: 'glow', stardust: 'glitter', prism: 'prism' };
 const BREED_SPECIES = ['cat', 'dog'];
@@ -46,7 +47,7 @@ export class ArtPack {
    * Which sprites make up one frame, back to front. Sync; no pixels yet.
    * @returns {{ key:string, f:number, dx:number, dy:number, atlas:number, rect:number[], mask:any, channels:Array }[]}
    */
-  layersFor(spec, catalog, { anim = 'idle', dir = 'front', frame = 0, expr = 'neutral' } = {}) {
+  layersFor(spec, catalog, { anim = 'idle', dir = 'front', frame = 0, expr = 'neutral', equips = [] } = {}) {
     const m = this.m, d = this.dirFor(anim, dir);
     const prop = `${spec.model}.${spec.body}`, variant = spec.species === 'mecha' ? 'mecha.1.average' : `${spec.species}.${prop}`;
     const out = [];
@@ -69,11 +70,12 @@ export class ArtPack {
         if (p.expr && p.expr !== expr) continue;
         if (p.item) {
           if (!worn.has(p.item)) continue;
+          if (p.item.startsWith('gloves.') && !equips.includes('gloves')) continue;   // v1.22: boxing gloves only in fights (equips ['gloves'])
           const underHat = name.endsWith('~hat');
           if (p.slot === 'hair' && underHat !== hides.includes('hair.top')) continue;
           if (p.slot === 'hairBack' && hides.includes('hair.back')) continue;
         }
-        const channels = channelsFor(p.colors, p.item, spec, catalog, m.palettes);
+        const channels = channelsFor(p.colors, p.item, spec, catalog, m.palettes, m.itemColors);
         if (p.attach === 'head') {
           if (!head) continue;
           const seg = p.by === '*' ? '*' : spec.species;
@@ -164,6 +166,7 @@ export class ArtPack {
     await this.ensure(layers);
     const W = this.frame.w, H = this.frame.h, out = new Uint8ClampedArray(W * H * 4);
     let animated = false;
+    const owner = new Uint8Array(W * H);   // v1.18: 1 where the shirt torso is on top (the jersey number goes only there)
     for (const L of layers) {
       const s = await this.sprite(L);
       let px = s.rgba;
@@ -172,21 +175,30 @@ export class ArtPack {
         if (L.channels.some((c) => c && c.fx)) animated = true;
       }
       blit(out, W, H, px, s.w, s.h, L.dx, L.dy);
+      for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) { const X = x + L.dx, Y = y + L.dy; if (X >= 0 && Y >= 0 && X < W && Y < H && px[(y * s.w + x) * 4 + 3]) owner[Y * W + X] = L.slot === 'shirt' ? 1 : 0; }
     }
+    // v1.18 jersey number (core avatar/decals.mjs): drawn on the finished frame, moved (never stretched) by the height rows above it
+    const num = jerseyNumberOf(spec, spec.wear && spec.wear.shirt ? itemById(catalog, spec.wear.shirt.item) : null);
+    const prop = `${spec.model}.${spec.body}`, d = this.dirFor(opts.anim || 'idle', opts.dir || 'front');
+    const anc = num && this.m.anchors && this.m.anchors[prop] && this.m.anchors[prop][`${opts.anim || 'idle'}|${d}`];
+    const box = anc && anc.chest ? jerseyBox(num, anc.chest[frame % anc.chest.length], d) : null;
+    const number = (buf, w, h, rows) => { if (box) drawJerseyNumber(buf, w, h, num, jerseyColorOf(spec, (this.m.itemColors || {})[spec.wear.shirt.item]), box, { shift: rowsAbove(rows, box.y), clip: (x, y) => x >= 0 && y >= 0 && x < W && y < H && owner[y * W + x] === 1 }); };
     const st = this.stretchFor(opts.anim || 'idle', opts.dir || 'front', frame, layers);
     if (st && spec.height) {
       const rows = heightRows(st, spec.height, this.frame.unit || 1).filter((r) => r.y >= 0 && r.y < H);
       if (rows.length) {
         const r = stretchRows(out, W, H, rows);
+        number(r.data, r.w, r.h, rows);
         return { data: r.data, w: r.w, h: r.h, lift: r.h - H, layers: layers.length, animated };
       }
     }
+    number(out, W, H, []);
     return { data: out, w: W, h: H, lift: 0, layers: layers.length, animated };
   }
 }
 
 /** The colour channels a part is recoloured with (null = keep the art's own colours). */
-export function channelsFor(kind, itemId, spec, catalog, palettes = null) {
+export function channelsFor(kind, itemId, spec, catalog, palettes = null, itemColors = null) {
   const it = itemId ? itemById(catalog, itemId) : null;
   const fx = it && it.anim && it.anim.kind === 'fx' ? it.anim.fx : null;
   switch (kind) {
@@ -203,7 +215,13 @@ export function channelsFor(kind, itemId, spec, catalog, palettes = null) {
     case 'wings': return spec.wings ? [{ hsv: spec.wings.color, fx }] : [];
     case 'item': {
       const w = Object.values(spec.wear || {}).find((x) => x && x.item === itemId);
-      return w ? (w.colors || []).map((c) => ({ hsv: c, fx })) : [];
+      if (w) return (w.colors || []).map((c) => ({ hsv: c, fx }));
+      // the top-level Worns (spec.gloves, spec.extras.*) like the overlay (overlay/hf/art.mjs colorsFor): no colours picked
+      // yet = the art's defaults (art.json itemColors); locked-colour items keep the art's own
+      const top = [spec.gloves, ...Object.values(spec.extras || {})].find((x) => x && x.item === itemId);
+      if (!top || (it && it.lockedColors)) return [];
+      const cols = top.colors && top.colors.length ? top.colors : (itemColors && itemColors[itemId]) || [];
+      return cols.map((c) => ({ hsv: c, fx }));
     }
     default: return [];
   }

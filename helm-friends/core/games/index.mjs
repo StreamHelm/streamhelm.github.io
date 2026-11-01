@@ -9,6 +9,10 @@ import { GAME as heist } from './heist.mjs';
 import { GAME as flip } from './flip.mjs';
 import { GAME as race } from './race.mjs';
 import { GAME as cursed } from './cursed.mjs';
+import { GAME as plinko } from './plinko.mjs';
+import { GAME as potato } from './potato.mjs';
+import { GAME as wheel } from './wheel.mjs';
+import { GAME as danceoff } from './danceoff.mjs';
 import { createRng } from '../rng.mjs';
 import { DEFAULT_ECONOMY } from '../economy.mjs';
 
@@ -24,10 +28,10 @@ import { DEFAULT_ECONOMY } from '../economy.mjs';
  * @property {(input:Object, outcome:Object) => string} summary   the one chat line at endsAt (≤ 300 chars)
  */
 
-/** @type {Readonly<Record<'slots'|'roulette'|'fight'|'armwrestle'|'royale'|'heist'|'flip'|'race'|'cursed', GameEngine>>} */
-export const GAMES = Object.freeze({ slots, roulette, fight, armwrestle, royale, heist, flip, race, cursed });
+/** @type {Readonly<Record<'slots'|'roulette'|'fight'|'armwrestle'|'royale'|'heist'|'flip'|'race'|'cursed'|'plinko'|'potato', GameEngine>>} */
+export const GAMES = Object.freeze({ slots, roulette, fight, armwrestle, royale, heist, flip, race, cursed, plinko, potato, wheel, danceoff });   // v1.18: + Plinko, Hot Potato; v1.21: + Chaos Wheel, Dance-Off
 /** Games played 1–5 times in one show (input.runs, v1.9). */
-export const MULTI_RUN = Object.freeze(['slots', 'roulette', 'flip', 'cursed']);
+export const MULTI_RUN = Object.freeze(['slots', 'roulette', 'flip', 'cursed', 'plinko', 'wheel']);
 
 /**
  * Runs a game end to end from its seed: validate → resolve (rng fork 'resolve') → choreograph (fork 'show') →

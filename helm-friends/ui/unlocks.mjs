@@ -2,7 +2,7 @@
 // "Redeem on Twitch" (an extension can't spend channel points), and the item shop with slot / rarity / "can afford"
 // filters. The list follows Sky's rewards automatically (the `rewards` realtime event refetches it).
 
-import { fmt, isUnlocked, PSD, psd } from '../core/index.mjs';
+import { fmt, isUnlocked, isCostume, PSD, psd, FAITHS } from '../core/index.mjs';
 import { h, icon, mount } from './h.mjs';
 import { renderKeepingFocus, announce } from './a11y.mjs';
 import { coinImg } from './shell.mjs';
@@ -11,21 +11,27 @@ import { toast } from './toast.mjs';
 
 const SLOT_NAMES = { hat: 'Hats', eyewear: 'Glasses', ear: 'Ear piercings', nose: 'Nose piercings', shirt: 'Shirts', pants: 'Pants', shoes: 'Shoes',
   hair: 'Hair', hairfx: 'Hair effects', facialHair: 'Facial hair', eyes: 'Eyes', breed: 'Coats & breeds', ears: 'Ears, face shapes, extras', wings: 'Wings', brows: 'Eyebrows', pet: 'Pets',
-  'car.body': 'Getaway car', 'car.wheels': 'Car wheels', 'car.decal': 'Car decals', 'ufo.hull': 'UFO hulls', 'ufo.dome': 'UFO domes', 'ufo.lights': 'UFO lights', 'ufo.trail': 'UFO trails' };
+  'car.body': 'Getaway car', 'car.wheels': 'Car wheels', 'car.decal': 'Car decals', 'ufo.hull': 'UFO hulls', 'ufo.dome': 'UFO domes', 'ufo.lights': 'UFO lights', 'ufo.trail': 'UFO trails',
+  gloves: 'Gloves', nameColor: 'Name colours', tag: 'Name boxes', font: 'Name fonts',   // v1.18 (art slots)
+  necklace: 'Necklaces', backpack: 'Backpacks', cape: 'Capes', held: 'Held items', aura: 'Auras', trail: 'Trails' };   // v1.21 (art round 6)
 const PAGE = 120;
+/** SH Gods BRIDGE: the races the cameo picker offers (the words the game side reads). */
+const CAMEO_RACES = [['random', 'Surprise me'], ['nord', 'Nord'], ['imperial', 'Imperial'], ['breton', 'Breton'], ['redguard', 'Redguard'], ['altmer', 'High Elf (Altmer)'],
+  ['bosmer', 'Wood Elf (Bosmer)'], ['dunmer', 'Dark Elf (Dunmer)'], ['orc', 'Orc (Orsimer)'], ['khajiit', 'Khajiit'], ['argonian', 'Argonian']];
 /** v1.16: shop categories over the catalog slots. */
-const SHOP_GROUPS = [['', 'All'], ['clothes', 'Clothes'], ['hair', 'Hair & face'], ['body', 'Coats & features'], ['pet', 'Pets'], ['rides', 'Car & UFO']];
-const groupOf = (slot) => (['hat', 'eyewear', 'ear', 'nose', 'shirt', 'pants', 'shoes'].includes(slot) ? 'clothes' : ['hair', 'hairfx', 'facialHair', 'eyes', 'brows'].includes(slot) ? 'hair'
+const SHOP_GROUPS = [['', 'All'], ['clothes', 'Clothes'], ['gear', 'Accessories'], ['fx', 'Auras & trails'], ['hair', 'Hair & face'], ['body', 'Coats & features'], ['pet', 'Pets'], ['rides', 'Car & UFO'], ['name', 'Name tag']];
+const groupOf = (slot) => (['necklace', 'backpack', 'cape', 'held'].includes(slot) ? 'gear' : slot === 'aura' || slot === 'trail' ? 'fx' : ['hat', 'eyewear', 'ear', 'nose', 'shirt', 'pants', 'shoes', 'gloves'].includes(slot) ? 'clothes' : slot === 'nameColor' || slot === 'tag' || slot === 'font' ? 'name' : ['hair', 'hairfx', 'facialHair', 'eyes', 'brows'].includes(slot) ? 'hair'
   : ['breed', 'ears', 'wings'].includes(slot) ? 'body' : slot === 'pet' ? 'pet' : /^(car|ufo)\./.test(slot) ? 'rides' : 'clothes');
 const RARITIES = [['common', 'Common'], ['rare', 'Rare'], ['epic', 'Epic'], ['legendary', 'Legendary']];
 
 /**
  * @param {{ store:Object, api:Object, actions:Object, art:{ previewUrl:(item:Object)=>string } , twitchChannel:string }} o
  */
-export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
+export function createUnlocks({ store, api, actions, previews, tryOn = null, twitchUrl }) {
   const filters = { group: '', slot: '', rarity: '', afford: false, q: '' };
   let shown = PAGE;   // v1.16: the shop pages through ~400 items (Show more), with category tabs + search
   const inputs = new Map();   // reward id → typed text (kept across re-renders)
+  const forms = new Map();    // SH Gods BRIDGE: reward id → the cameo picker's state
   const pendingRedeem = new Set();
   const el = h('section', { 'aria-labelledby': 'un-title' });
 
@@ -37,7 +43,7 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
 
   // ---------- rewards
   function rewardsSection() {
-    const st = store.get(), list = (st.rewards || []).filter((r) => r.enabled !== false);
+    const st = store.get(), list = (st.rewards || []).filter((r) => r.enabled !== false && !r.hidden);   // hidden: its "shows when…" conditions are false
     const d = list.filter((r) => r.currency === 'dollahs'), p = list.filter((r) => r.currency !== 'dollahs');
     return [
       h('h3', { class: 'section-title' }, `Spend ${PSD} on the stream`),
@@ -54,7 +60,7 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
     const why = !st.loggedIn ? (st.mode === 'ext' ? 'Connect your Twitch name to redeem.' : 'Log in to redeem.')
       : r.paused ? 'Paused by Sky for now.' : liveBlocked ? 'Only while Sky is live.' : short ? `You need ${psd(r.cost - me.balance)} more.` : null;
     const inputId = 'rw-in-' + r.id;
-    const input = r.inputRequired ? h('label', { class: 'field' }, h('span', null, r.prompt || 'Your message'),
+    const input = r.form === 'cameo' ? cameoForm(r) : r.inputRequired ? h('label', { class: 'field' }, h('span', null, r.prompt || 'Your message'),
       h('input', { type: 'text', id: inputId, maxlength: 200, value: inputs.get(r.id) || '', 'data-fk': inputId, oninput: (e) => inputs.set(r.id, e.target.value) })) : null;
     const dot = h('span', { class: 'reward-dot', 'aria-hidden': 'true' });
     if (r.color) dot.style.background = r.color;
@@ -68,8 +74,32 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
         type: 'button', class: 'btn solid block', 'data-fk': 'redeem-' + r.id, disabled: !!why && st.loggedIn || pendingRedeem.has(r.id),
         'aria-describedby': why ? 'why-' + r.id : null,
         onclick: () => (st.loggedIn ? redeem(r) : actions.login()),
-      }, st.loggedIn ? `Redeem for ${fmt(r.cost)}` : st.mode === 'ext' ? 'Connect to redeem' : 'Log in to redeem'),
+              'aria-label': st.loggedIn ? `Redeem ${r.title} for ${psd(r.cost)}` : null,
+      }, st.loggedIn ? ['Redeem for ', fmt(r.cost), coinImg('coin-sm')] : st.mode === 'ext' ? 'Connect to redeem' : 'Log in to redeem'),
       why ? h('p', { class: 'small muted', id: 'why-' + r.id }, why) : null);
+  }
+
+  // SH Gods BRIDGE: "Skyrim Cameo" - who you are in Sky's game: male / female / other (+ a body for "other": Skyrim only has two),
+  // a race, and your Helm Friend's god if you picked one. Fills the reward's text the way the chat version reads it
+  // ("female nord glorp", "other male khajiit").
+  function cameoForm(r) {
+    const st = store.get(), f = forms.get(r.id) || { who: '', body: 'random', race: 'random' };
+    const faith = st.character && st.character.spec && st.character.spec.faith;
+    const god = FAITHS.find((x) => x.id === faith);
+    const sync = () => { forms.set(r.id, f); inputs.set(r.id, f.who ? [f.who, f.who === 'other' && f.body !== 'random' ? f.body : '', f.race, god ? god.id : ''].filter(Boolean).join(' ') : ''); };
+    sync();
+    const seg = (key, label, choices) => h('div', { class: 'field', role: 'group', 'aria-label': label }, h('span', null, label),
+      h('div', { class: 'seg' }, choices.map(([v, t]) => h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f[key] === v), 'data-fk': `cameo-${key}-${v}`,
+        onclick: () => { f[key] = v; sync(); render(); } }, t))));
+    return h('div', { class: 'cameo-form', 'data-cameo': r.id },
+      seg('who', 'You are', [['male', 'Male'], ['female', 'Female'], ['other', 'Other']]),
+      f.who === 'other' ? seg('body', 'Body in the game (Skyrim has two)', [['male', 'Male body'], ['female', 'Female body'], ['random', 'Random']]) : null,
+      f.who === 'other' ? h('p', { class: 'small muted' }, 'Your worshiper is called they/them in conversations.') : null,
+      h('label', { class: 'field' }, h('span', null, 'Race'),
+        h('select', { 'data-fk': 'cameo-race', 'aria-label': 'Race', onchange: (e) => { f.race = e.target.value; sync(); render(); } },
+          CAMEO_RACES.map(([v, t]) => h('option', { value: v, selected: f.race === v }, t)))),
+      h('p', { class: 'small muted' }, god ? `You worship ${god.name} (your Helm Friend's god).` : 'Your god is picked for you - choose one for your Helm Friend in the editor to pick it yourself.'),
+      h('p', { class: 'small muted' }, 'Your Twitch name shows above your worshiper. You can retire it any time ("Retire my Skyrim Cameo").'));
   }
 
   function pointsReward(r) {
@@ -81,7 +111,7 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
 
   async function redeem(r) {
     const text = (inputs.get(r.id) || '').trim();
-    if (r.inputRequired && !text) { toast('This one needs your message first.', { kind: 'error' }); return; }
+    if (r.inputRequired && !text) { toast(r.form === 'cameo' ? 'Pick male, female or other first.' : 'This one needs your message first.', { kind: 'error' }); return; }
     const ok = await confirmDialog({ title: `Redeem "${r.title}"?`, body: `This spends ${psd(r.cost)}.`, confirmLabel: `Redeem (${fmt(r.cost)})` });
     if (!ok) return;
     pendingRedeem.add(r.id); render();
@@ -101,7 +131,8 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
     const owned = new Set(st.owned || []), me = st.me;
     const flags = { unlockAll: !!(me && me.flags && me.flags.unlockAll), unique: (me && me.unique) || null };
     const balance = me ? me.balance : 0;
-    const all = st.catalog.items.filter((it) => !['starter', 'reserved'].includes(it.rarity) && !it.reservedFor && it.slot !== 'species');
+    // v1.18: costumes are put on by the games (never sold); name colours / box shapes are bought here and picked in Settings
+    const all = st.catalog.items.filter((it) => !['starter', 'reserved'].includes(it.rarity) && !it.reservedFor && it.slot !== 'species' && !isCostume(it));
     let items = filters.group ? all.filter((it) => groupOf(it.slot) === filters.group) : all;
     const slots = [...new Set(items.map((it) => it.slot))];
     if (filters.slot && slots.includes(filters.slot)) items = items.filter((it) => it.slot === filters.slot); else filters.slot = '';
@@ -115,7 +146,7 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
     return [
       h('h3', { class: 'section-title' }, 'Item shop'),
       h('p', { class: 'small muted' }, 'Unlock outfits for your character. Tip: you can try anything on first in "Make your character".'),
-      h('div', { class: 'chips shop-groups', role: 'group', 'aria-label': 'Shop categories' }, SHOP_GROUPS.map(([id, label]) => h('button', {
+      h('div', { class: 'chips shop-groups', role: 'group', 'aria-label': 'Shop categories' }, SHOP_GROUPS.filter(([id]) => (id !== 'gear' && id !== 'fx') || all.some((it) => groupOf(it.slot) === id)).map(([id, label]) => h('button', {   // v1.21: the new groups show once ART sells items in them
         type: 'button', class: 'chip', 'aria-pressed': String(filters.group === id), 'data-fk': 'shop-' + (id || 'all'),
         onclick: () => { filters.group = id; filters.slot = ''; shown = PAGE; render(); },
       }, label, h('span', { class: 'count' }, ' ' + (id ? all.filter((it) => groupOf(it.slot) === id).length : all.length))))),
@@ -127,24 +158,27 @@ export function createUnlocks({ store, api, actions, previews, twitchUrl }) {
         h('label', { class: 'switch' }, h('span', null, 'Only what I can afford'),
           h('input', { type: 'checkbox', checked: filters.afford, 'data-fk': 'f-afford', onchange: (e) => { filters.afford = e.target.checked; render(); } }))),
       h('p', { class: 'small muted', role: 'status' }, `${items.length} item${items.length === 1 ? '' : 's'}${items.length > shown ? ` · showing ${shown}` : ''}`),
-      items.length ? h('div', { class: 'grid' }, items.slice(0, shown).map((it) => itemCard(it, isUnlocked(it, owned, flags), st))) : h('p', { class: 'empty' }, 'Nothing matches. Try another category or search.'),
+      items.length ? h('div', { class: 'grid shop-grid' }, items.slice(0, shown).map((it) => itemCard(it, isUnlocked(it, owned, flags), st))) : h('p', { class: 'empty' }, 'Nothing matches. Try another category or search.'),
       items.length > shown ? h('button', { type: 'button', class: 'btn block', 'data-fk': 'shop-more', onclick: () => { shown += PAGE; render(); } }, `Show more (${items.length - shown} left)`) : null,
     ];
   }
 
+  const tryOnImg = (img, it) => (tryOn ? tryOn.attach(img, it) : img);
   function itemCard(it, have, st) {
     const me = st.me, afford = me && (me.balance === -1 || me.balance >= it.price);
+    // v1.18 layout: preview · name (2 lines, reserved) · rarity · [foot pinned to the bottom: price / owned + button]
     return h('article', { class: 'item-card', 'data-item': it.id, 'data-owned': have ? '1' : '0' },
-      h('img', { src: previews(it), alt: '', width: 64, height: 64, loading: 'lazy' }),
-      h('span', { class: 'name' }, it.name),
+      tryOnImg(h('img', { class: 'preview', src: previews(it), alt: '', width: 64, height: 64, loading: 'lazy' }), it),
+      h('span', { class: 'name', title: it.name }, it.name),
       h('span', { class: ['badge', it.rarity] }, RARITIES.find((r) => r[0] === it.rarity)?.[1] || it.rarity),
-      have ? h('span', { class: 'badge owned' }, icon('check'), 'Owned')
-        : h('span', { class: 'price', 'aria-label': psd(it.price) }, icon('lock'), fmt(it.price), coinImg('coin-sm')),
-      have ? null : h('button', {
-        type: 'button', class: 'btn small solid', 'data-fk': 'buy-' + it.id, disabled: st.loggedIn && !afford,
-        'aria-label': st.loggedIn ? `Unlock ${it.name} for ${psd(it.price)}` : `Log in to unlock ${it.name}`,
-        onclick: () => (st.loggedIn ? buy(it) : actions.login()),
-      }, st.loggedIn ? 'Unlock' : 'Log in'));
+      h('div', { class: 'card-foot' },
+        have ? h('span', { class: 'badge owned' }, icon('check'), 'Owned')
+          : h('span', { class: 'price', 'aria-label': psd(it.price) }, icon('lock'), fmt(it.price), coinImg('coin-sm')),
+        have ? null : h('button', {
+          type: 'button', class: 'btn small solid', 'data-fk': 'buy-' + it.id, disabled: st.loggedIn && !afford,
+          'aria-label': st.loggedIn ? `Unlock ${it.name} for ${psd(it.price)}` : `Log in to unlock ${it.name}`,
+          onclick: () => (st.loggedIn ? buy(it) : actions.login()),
+        }, st.loggedIn ? 'Unlock' : 'Log in')));
   }
 
   async function buy(it) {
